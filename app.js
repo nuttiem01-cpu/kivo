@@ -5,8 +5,10 @@
   const Lists = window.KivoLists;
   const Practice = window.KivoPractice;
   const Themes = window.KivoThemes;
+  const Pomodoro = window.KivoPomodoro;
+  const Activity = window.KivoActivity;
   const ids = [
-    'setup','editor','practice','completion','completion-eyebrow','completion-title','completion-intro','celebration','theme-picker','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','list-status','new-list-button','import-list-button','csv-file','list-count','list-overview','delete-selected-lists','delete-all-lists',
+    'setup','editor','practice','completion','completion-eyebrow','completion-title','completion-intro','celebration','theme-picker','storage-note','home-tabs','tab-practice','tab-progress','tab-manage','tab-review','tab-about','home-view-practice','home-view-progress','home-view-manage','home-view-review','home-view-about','progress-preview','progress-preview-summary','progress-preview-link','progress-direction-ab','progress-direction-ba','lesson-overall-count','lesson-overall-percent','lesson-overall-track','lesson-overall-fill','lesson-gallery','lesson-empty','lesson-pagination','lesson-page-prev','lesson-page-next','lesson-page-summary','activity-practice-time','activity-cards-reviewed','activity-sessions','activity-active-days','activity-week-chart','activity-empty','list-select','list-status','new-list-button','import-list-button','csv-file','list-count','list-overview','delete-selected-lists','delete-all-lists',
     'mistakes-review','mistake-total','mistake-empty','mistake-key-heading','mistake-value-heading','mistake-rows','practice-mistakes-button','export-mistakes','clear-mistakes',
     'practice-options','direction','mode','written-options','collect-mistakes','hint-counts-as-mastered','start-button','progress-hint','export-progress','progress-file','reset-progress',
     'editor-back-button','editor-name','editor-key-label','editor-value-label','entry-search','add-entry-button','editor-count','editor-status',
@@ -18,16 +20,23 @@
 
   let storage = null;
   try { storage = window.localStorage; storage.getItem(Lists.WORKSPACE_KEY); } catch { storage = null; }
+  const PROGRESS_DIRECTION_KEY = 'kivo-progress-direction';
+  let progressDirection = 'key-value';
+  try { if (storage?.getItem(PROGRESS_DIRECTION_KEY) === 'value-key') progressDirection = 'value-key'; } catch { /* Keep the default direction for this session. */ }
   let activeTheme = Themes.apply(Themes.read(storage));
   let workspace = Lists.loadWorkspace(storage);
   let storageWorks = Boolean(storage);
+  Pomodoro.createPomodoro({ storage });
   let queue = [], current = null, hintState = null, evaluated = false, masteredWithHelp = 0, allowHelpMastery = false, sessionMistakes = 0, sessionTotal = 0;
   let currentListId = null, practiceDirection = 'key-value', mistakePractice = false;
   let oralPractice = false, oralAnswerRevealed = false, oralReviewed = 0;
   let sessionFinished = false;
   let nearRetryUsed = false;
+  let currentCardCounted = false;
   let draft = null, editorDirty = false;
   let homeView = 'practice';
+  let activityTracker = null;
+  let progressListPage = 0;
 
   function shuffled(items) {
     const result = items.slice();
@@ -52,6 +61,7 @@
   function setHomeView(view) {
     const views = {
       practice: [els.homeViewPractice, els.tabPractice],
+      progress: [els.homeViewProgress, els.tabProgress],
       manage: [els.homeViewManage, els.tabManage],
       review: [els.homeViewReview, els.tabReview],
       about: [els.homeViewAbout, els.tabAbout]
@@ -64,6 +74,7 @@
       tab.tabIndex = name === view ? 0 : -1;
       tab.classList.toggle('active', name === view);
     }
+    if (view === 'progress') renderActivity();
   }
   function setListStatus(message, error = false) {
     els.listStatus.textContent = message;
@@ -74,6 +85,101 @@
     storageWorks = Lists.saveWorkspace(storage, workspace);
     els.storageNote.hidden = storageWorks;
     return storageWorks;
+  }
+  function recordReviewedCard() {
+    Lists.recordReviewedCard(workspace, Lists.localDateKey(new Date()));
+  }
+  function recordWrittenCardOnce() {
+    if (currentCardCounted) return false;
+    currentCardCounted = true;
+    recordReviewedCard();
+    return true;
+  }
+  function formatPracticeTime(milliseconds) {
+    if (!milliseconds) return '0 min';
+    const minutes = Math.floor(milliseconds / 60_000);
+    if (!minutes) return '<1 min';
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60), remainder = minutes % 60;
+    return remainder ? `${hours} h ${remainder} min` : `${hours} h`;
+  }
+  function renderLessonProgress() {
+    const direction = progressDirection;
+    const selected = workspace.lists.find(list => list.id === workspace.activeListId);
+    const lists = workspace.lists.slice();
+    if (selected) {
+      lists.splice(lists.indexOf(selected), 1);
+      lists.unshift(selected);
+    }
+    const totalItems = lists.reduce((sum, list) => sum + list.entries.length, 0);
+    let completedItems = 0;
+    const progress = lists.map(list => {
+      const total = list.entries.length;
+      const queue = Lists.progressQueue(workspace, list, direction) || list.entries;
+      const completed = Math.max(0, Math.min(total, total - queue.length));
+      completedItems += completed;
+      return { list, total, completed, percentage: total ? Math.round(completed / total * 100) : 0 };
+    });
+    const overallPercent = totalItems ? Math.round(completedItems / totalItems * 100) : 0;
+    els.progressDirectionAb.setAttribute('aria-pressed', String(direction === 'key-value'));
+    els.progressDirectionBa.setAttribute('aria-pressed', String(direction === 'value-key'));
+    els.progressDirectionAb.classList.toggle('active', direction === 'key-value');
+    els.progressDirectionBa.classList.toggle('active', direction === 'value-key');
+    els.lessonOverallCount.textContent = `${completedItems.toLocaleString()} / ${totalItems.toLocaleString()}`;
+    els.lessonOverallPercent.textContent = `${overallPercent}%`;
+    els.lessonOverallTrack.setAttribute('aria-valuenow', String(overallPercent));
+    els.lessonOverallTrack.setAttribute('aria-valuetext', `${completedItems} of ${totalItems} items completed`);
+    els.lessonOverallFill.style.width = `${overallPercent}%`;
+    els.lessonGallery.replaceChildren();
+    els.lessonEmpty.hidden = lists.length > 0;
+    const pageCount = Math.max(1, Math.ceil(progress.length / 10));
+    progressListPage = Math.min(progressListPage, pageCount - 1);
+    const start = progressListPage * 10;
+    for (const { list, total, completed, percentage } of progress.slice(start, start + 10)) {
+      const gauge = document.createElement('article'); gauge.className = 'lesson-gauge';
+      gauge.setAttribute('aria-label', `${list.name}: ${percentage}%, ${completed} of ${total} items completed`);
+      const circle = document.createElement('div'); circle.className = 'lesson-gauge-circle'; circle.style.setProperty('--lesson-progress', `${percentage}%`);
+      const center = document.createElement('div'); center.className = 'lesson-gauge-center';
+      const percent = document.createElement('strong'); percent.textContent = `${percentage}%`;
+      const count = document.createElement('span'); count.textContent = `${completed} / ${total}`;
+      center.append(percent, count); circle.append(center);
+      const name = document.createElement('h3'); name.textContent = list.name;
+      const detail = document.createElement('span'); detail.className = 'lesson-gauge-detail'; detail.textContent = 'items completed';
+      gauge.append(circle, name, detail); els.lessonGallery.append(gauge);
+    }
+    els.lessonPagination.hidden = pageCount <= 1;
+    els.lessonPagePrev.disabled = progressListPage === 0;
+    els.lessonPageNext.disabled = progressListPage >= pageCount - 1;
+    els.lessonPageSummary.textContent = progress.length ? `${start + 1}–${Math.min(start + 10, progress.length)} of ${progress.length}` : '';
+  }
+  function renderActivity() {
+    renderLessonProgress();
+    const summary = Lists.activitySummary(workspace.activity);
+    els.activityPracticeTime.textContent = formatPracticeTime(summary.practiceMs);
+    els.activityCardsReviewed.textContent = String(summary.cardsReviewed);
+    els.activitySessions.textContent = String(summary.sessionsCompleted);
+    els.activityActiveDays.textContent = String(summary.activeDays);
+    const totalActivity = summary.practiceMs + summary.cardsReviewed + summary.sessionsCompleted;
+    els.activityEmpty.hidden = totalActivity > 0;
+    const weeklyCards = summary.recentDays.reduce((total, day) => total + day.cardsReviewed, 0);
+    const weeklyMinutes = Math.floor(summary.recentDays.reduce((total, day) => total + day.practiceMs, 0) / 60_000);
+    els.progressPreview.hidden = !totalActivity;
+    els.progressPreviewSummary.textContent = `This week · ${weeklyCards} card${weeklyCards === 1 ? '' : 's'} · ${weeklyMinutes} min`;
+    const maxMs = Math.max(0, ...summary.recentDays.map(day => day.practiceMs));
+    els.activityWeekChart.replaceChildren();
+    for (const day of summary.recentDays) {
+      const item = document.createElement('div'); item.className = 'activity-day'; item.setAttribute('role', 'listitem');
+      const minutes = Math.floor(day.practiceMs / 60_000);
+      item.setAttribute('aria-label', `${day.label}: ${minutes} minute${minutes === 1 ? '' : 's'}, ${day.cardsReviewed} cards reviewed`);
+      const value = document.createElement('span'); value.className = 'activity-day-value';
+      value.textContent = day.practiceMs ? (minutes ? `${minutes}m` : '<1m') : '';
+      const track = document.createElement('span'); track.className = 'activity-day-track';
+      const bar = document.createElement('span'); bar.className = 'activity-day-bar';
+      bar.style.height = day.practiceMs ? `${Math.max(8, day.practiceMs / maxMs * 100)}%` : '0%';
+      track.append(bar);
+      const label = document.createElement('span'); label.className = 'activity-day-label'; label.textContent = day.label;
+      item.append(value, track, label); els.activityWeekChart.append(item);
+    }
   }
   function download(filename, content, type) {
     const blob = new Blob([content], { type });
@@ -369,6 +475,7 @@
     draft.entries.push(entry); els.entrySearch.value = ''; markEditorDirty(); renderEditorRows(entry.id);
   }
   function start(full = true, mistakesOnly = false) {
+    activityTracker?.stop();
     const list = selectedList();
     if (!list) return;
     currentListId = list.id; practiceDirection = els.direction.value; mistakePractice = mistakesOnly;
@@ -391,6 +498,7 @@
       else finish();
       return;
     }
+    activityTracker?.begin();
     const itemLabel = oralPractice ? 'card' : mistakesOnly ? 'mistake' : 'entry';
     els.listLabel.textContent = `${list.name} · ${queue.length} ${itemLabel}${queue.length === 1 ? '' : 's'}`;
     show('practice'); renderQuestion();
@@ -447,7 +555,7 @@
   }
   function renderQuestion() {
     if (!queue.length) { finish(); return; }
-    current = queue[0]; current.direction = directionFor(); evaluated = false; nearRetryUsed = false;
+    current = queue[0]; current.direction = directionFor(); evaluated = false; nearRetryUsed = false; currentCardCounted = false;
     oralAnswerRevealed = false;
     els.practice.classList.toggle('oral-mode', oralPractice);
     els.feedback.hidden = true; els.lookupAnswer.hidden = true; els.hintDisplay.hidden = true;
@@ -485,7 +593,9 @@
       return;
     }
     oralReviewed++;
+    recordReviewedCard();
     queue.shift();
+    persist(); renderActivity();
     if (!queue.length) { renderSessionProgress(); finish(); return; }
     renderQuestion();
   }
@@ -500,6 +610,8 @@
     const comparison = Practice.compareAnswers(els.answer.value, expected);
     if (comparison === 'near' && !nearRetryUsed && hintState.level < 3) {
       nearRetryUsed = true;
+      recordWrittenCardOnce();
+      persist(); renderActivity();
       els.feedback.className = 'feedback near';
       els.feedback.hidden = false;
       els.feedbackTitle.textContent = Practice.feedbackLabel('near', hintState.level);
@@ -546,8 +658,9 @@
       recordMistake(current.pair);
     }
     Practice.retainForRetry(queue, result, mastered);
+    recordWrittenCardOnce();
     if (mistakePractice) persist(); else savePracticeProgress();
-    renderSessionProgress();
+    renderSessionProgress(); renderActivity();
     els.answer.disabled = true;
     const isFinish = queue.length === 0 && mastered;
     setExerciseAction(isFinish ? 'Finish practice' : 'Continue to next card', isFinish);
@@ -560,6 +673,9 @@
   function finish() {
     if (sessionFinished) return;
     sessionFinished = true;
+    activityTracker?.stop();
+    if (sessionTotal > 0) Lists.recordCompletedSession(workspace, Lists.localDateKey(new Date()));
+    persist(); renderActivity();
     if (oralPractice) {
       els.completionStats.hidden = true;
       els.completionEyebrow.textContent = 'ORAL PRACTICE COMPLETE';
@@ -628,7 +744,7 @@
     setHomeView(tabs[next].dataset.homeTab);
   });
   els.listSelect.addEventListener('change', () => {
-    workspace.activeListId = els.listSelect.value || null; persist(); renderSetup();
+    workspace.activeListId = els.listSelect.value || null; progressListPage = 0; persist(); renderSetup();
   });
   els.newListButton.addEventListener('click', newList);
   els.importListButton.addEventListener('click', () => els.csvFile.click());
@@ -666,7 +782,7 @@
     const name = els.editorName.value || draft.name;
     download(`${safeFilename(name)}.csv`, Lists.encodeCSV(draft.entries), 'text/csv;charset=utf-8');
   });
-  els.leaveButton.addEventListener('click', () => { if (!oralPractice) savePracticeProgress(); renderSetup(); show('setup'); });
+  els.leaveButton.addEventListener('click', () => { activityTracker?.stop(); if (!oralPractice) savePracticeProgress(); renderSetup(); show('setup'); });
   els.answer.addEventListener('keydown', event => {
     if (oralPractice) return;
     if (!Practice.shouldRequestHint(event.key, els.answer.value, evaluated)) return;
@@ -680,10 +796,26 @@
     if (oralPractice) { oralAction(); return; }
     if (Practice.enterAction(evaluated) === 'check') checkAnswer(); else advance();
   });
-  els.completionBackButton.addEventListener('click', () => { renderSetup(); show('setup'); });
+  els.completionBackButton.addEventListener('click', () => { activityTracker?.stop(); renderSetup(); show('setup'); });
   els.completionMistakesButton.addEventListener('click', () => {
     if (oralPractice) { start(true, false); return; }
     renderSetup(); setHomeView('review'); show('setup'); els.mistakesReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  els.progressPreviewLink.addEventListener('click', () => setHomeView('progress'));
+  const setProgressDirection = direction => {
+    progressDirection = direction;
+    progressListPage = 0;
+    try { storage?.setItem(PROGRESS_DIRECTION_KEY, direction); } catch { /* Keep the selection for this session. */ }
+    renderLessonProgress();
+  };
+  els.progressDirectionAb.addEventListener('click', () => setProgressDirection('key-value'));
+  els.progressDirectionBa.addEventListener('click', () => setProgressDirection('value-key'));
+  els.lessonPagePrev.addEventListener('click', () => {
+    if (progressListPage > 0) { progressListPage--; renderLessonProgress(); }
+  });
+  els.lessonPageNext.addEventListener('click', () => {
+    const pageCount = Math.ceil(workspace.lists.length / 10);
+    if (progressListPage + 1 < pageCount) { progressListPage++; renderLessonProgress(); }
   });
   els.exportProgress.addEventListener('click', () => download('kivo-workspace-backup.json', JSON.stringify({ format: 'kivo-workspace-v1', workspace }, null, 2), 'application/json'));
   els.progressFile.addEventListener('change', async event => {
@@ -719,8 +851,16 @@
     persist(); renderSetup();
   });
 
+  activityTracker = Activity.createActivityTracker({
+    document,
+    onElapsed(segments) {
+      for (const segment of segments) Lists.recordPracticeTime(workspace, segment.date, segment.milliseconds);
+      persist(); renderActivity();
+    }
+  });
   persist();
   renderSetup();
+  renderActivity();
   renderPracticeMode();
   renderThemePicker();
   window.Kivo = { ...Practice, ...Lists };

@@ -22,7 +22,68 @@
   }
 
   function createWorkspace() {
-    return { version: 1, activeListId: null, lists: [], progress: {}, mistakes: {}, legacyProgress: {}, migrationNotice: '' };
+    return { version: 1, activeListId: null, lists: [], progress: {}, mistakes: {}, legacyProgress: {}, activity: { days: {} }, migrationNotice: '' };
+  }
+
+  function normalizeActivity(activity) {
+    const days = {};
+    if (!activity?.days || typeof activity.days !== 'object' || Array.isArray(activity.days)) return { days };
+    for (const [date, record] of Object.entries(activity.days)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || localDateKey(new Date(`${date}T12:00:00`)) !== date || !record || typeof record !== 'object') continue;
+      const practiceMs = Math.max(0, Math.floor(Number(record.practiceMs) || 0));
+      const cardsReviewed = Math.max(0, Math.floor(Number(record.cardsReviewed) || 0));
+      const sessionsCompleted = Math.max(0, Math.floor(Number(record.sessionsCompleted) || 0));
+      if (practiceMs || cardsReviewed || sessionsCompleted) days[date] = { practiceMs, cardsReviewed, sessionsCompleted };
+    }
+    return { days };
+  }
+
+  function activityDay(workspace, date) {
+    workspace.activity ||= { days: {} };
+    workspace.activity.days ||= {};
+    return workspace.activity.days[date] ||= { practiceMs: 0, cardsReviewed: 0, sessionsCompleted: 0 };
+  }
+
+  function recordPracticeTime(workspace, date, milliseconds) {
+    const amount = Math.max(0, Math.floor(Number(milliseconds) || 0));
+    if (!amount) return;
+    activityDay(workspace, date).practiceMs += amount;
+  }
+
+  function recordReviewedCard(workspace, date) {
+    activityDay(workspace, date).cardsReviewed++;
+  }
+
+  function recordCompletedSession(workspace, date) {
+    activityDay(workspace, date).sessionsCompleted++;
+  }
+
+  function localDateKey(date) {
+    const value = date instanceof Date ? date : new Date(date);
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+
+  function activitySummary(activity, today = new Date()) {
+    const days = normalizeActivity(activity).days;
+    const totals = Object.values(days).reduce((sum, day) => ({
+      practiceMs: sum.practiceMs + day.practiceMs,
+      cardsReviewed: sum.cardsReviewed + day.cardsReviewed,
+      sessionsCompleted: sum.sessionsCompleted + day.sessionsCompleted
+    }), { practiceMs: 0, cardsReviewed: 0, sessionsCompleted: 0 });
+    const anchor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const recentDays = [];
+    for (let offset = 6; offset >= 0; offset--) {
+      const date = new Date(anchor);
+      date.setDate(anchor.getDate() - offset);
+      const key = localDateKey(date);
+      recentDays.push({
+        date: key,
+        label: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()],
+        practiceMs: days[key]?.practiceMs || 0,
+        cardsReviewed: days[key]?.cardsReviewed || 0
+      });
+    }
+    return { ...totals, activeDays: Object.keys(days).length, recentDays };
   }
 
   function pairSignature(key, value) {
@@ -235,6 +296,7 @@
       lists: stored.lists.map(list => makeList(list.name, list.entries || [], idFactory, list)),
       progress: stored.progress && typeof stored.progress === 'object' ? stored.progress : {},
       mistakes: stored.mistakes && typeof stored.mistakes === 'object' ? stored.mistakes : {},
+      activity: normalizeActivity(stored.activity),
       legacyProgress: stored.legacyProgress && typeof stored.legacyProgress === 'object' ? stored.legacyProgress : {}
     } : createWorkspace();
 
@@ -342,6 +404,7 @@
     restored.legacyProgress = source.legacyProgress && typeof source.legacyProgress === 'object' && !Array.isArray(source.legacyProgress)
       ? { ...source.legacyProgress } : {};
     restored.migrationNotice = typeof source.migrationNotice === 'string' ? source.migrationNotice : '';
+    restored.activity = normalizeActivity(source.activity);
 
     for (const list of restored.lists) {
       const entryIds = new Set(list.entries.map(entry => entry.id));
@@ -377,7 +440,8 @@
     createId, createWorkspace, makeList, makeEntry, uniqueName, validateEntries, setListDraft,
     addList, duplicateList, deleteList, deleteLists, deleteEntry, pairSignature, parseCSV, encodeCSV, hash, legacyFingerprint,
     migrateProgressForList, loadWorkspace, saveWorkspace, addMistake, removeMistake,
-    saveProgress, progressQueue, restoreBackup, mergeLegacyProgress
+    saveProgress, progressQueue, normalizeActivity, recordPracticeTime, recordReviewedCard,
+    recordCompletedSession, localDateKey, activitySummary, restoreBackup, mergeLegacyProgress
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KivoLists = api;

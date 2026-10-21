@@ -10,9 +10,12 @@ Kivo is a small vocabulary and concept practice app. It helps you recall a paire
 - Import and export UTF-8 CSV files.
 - Practice either direction or mix directions, with full and progressive modes.
 - Request up to three progressive hints with Space while the answer field is empty.
+- Use the optional Pomodoro focus timer; it runs independently of practice and resumes from local browser storage.
 - Review collected mistakes in the app, practice them again, or export them as CSV.
 - Choose between Classic, Arcade '86, Maze and the illustrated Quest adventure theme.
 - Save lists, per-list progress and mistakes in browser storage. Download a workspace backup when you want a portable copy.
+- See a quiet activity summary for practice time, cards reviewed, completed sessions and active days.
+- Optionally use the independent Pomodoro focus timer.
 
 ## Quick start
 
@@ -74,6 +77,10 @@ Progress is kept independently for each list and direction. Mixed practice has i
 ## Storage, backup and migration
 
 Kivo stores its local workspace, including lists, progress and mistakes, in `localStorage`. Nothing syncs automatically between browsers or devices. Choose **Download backup** to save one JSON file containing the complete workspace. **Restore backup** replaces the current lists, progress and mistakes with the contents of that file, after a confirmation. Restore keeps the backed-up list and entry IDs so saved progress remains attached to the correct entries. Use CSV export when you want to move or version individual lists. A merge or add-from-backup workflow is not currently provided.
+
+The optional Pomodoro timer stores its duration and running deadline separately from the workspace. A running timer can resume after reloading the page; resetting it or choosing a different duration changes only the timer.
+
+The Progress view records activity from the moment this feature is first used; Kivo does not invent historical totals from saved queues or mistake lists. Written cards count once when feedback first appears; the extra answer after a near-match stays part of that card review, while a later retry from the queue counts again. Oral cards count when **Next card** is pressed. A session counts only when its finish screen is reached. Practice time is measured independently from Pomodoro, pauses when the tab is hidden, and stops adding time after 60 seconds without keyboard or pointer activity. Older backups without activity data restore with empty activity totals.
 
 Earlier Kivo versions stored progress by CSV fingerprint and kept one global mistake collection. On first launch after upgrading, the old keys are retained. Collected mistakes are copied to a local list named **Recovered mistakes**. Previous progress is retained and can be restored for a list by importing the same CSV again; the old format did not contain the list entries themselves. You may delete the recovered list after reviewing it.
 

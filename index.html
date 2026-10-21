@@ -5,24 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f6f2">
   <title>Kivo — practice with your lists</title>
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="Kivo home"><span class="brand-mark">K</span><span>Kivo</span></a>
       <span class="tagline">A quiet place to practice</span>
+      <div class="pomodoro" id="pomodoro">
+        <button id="pomodoro-trigger" class="pomodoro-trigger" type="button" aria-label="Open Pomodoro timer" aria-expanded="false" aria-controls="pomodoro-panel">
+          <svg class="pomodoro-tomato" viewBox="0 0 40 44" aria-hidden="true" focusable="false"><path class="tomato-leaf" d="M19 8c-6-7-12-5-12-1 0 3 6 4 12 3-2 5-1 8 2 8 3 0 4-4 2-8 5 2 11 1 11-2 0-4-8-6-15 0Z"/><path class="tomato-fruit" d="M19 13c-3-3-7-3-10 0-5 4-7 11-7 17 0 8 7 13 18 13s18-5 18-13c0-6-2-13-7-17-3-3-7-3-10 0l-1 2-1-2Z"/><path class="tomato-shine" d="M9 24c1-4 3-7 6-8"/></svg>
+          <span id="pomodoro-trigger-time" class="pomodoro-trigger-time" hidden>20:00</span>
+        </button>
+        <section id="pomodoro-panel" class="pomodoro-panel" aria-label="Pomodoro timer" hidden>
+          <div class="pomodoro-panel-heading"><span class="pomodoro-panel-tomato" aria-hidden="true"><svg viewBox="0 0 40 44"><path class="tomato-leaf" d="M19 8c-6-7-12-5-12-1 0 3 6 4 12 3-2 5-1 8 2 8 3 0 4-4 2-8 5 2 11 1 11-2 0-4-8-6-15 0Z"/><path class="tomato-fruit" d="M19 13c-3-3-7-3-10 0-5 4-7 11-7 17 0 8 7 13 18 13s18-5 18-13c0-6-2-13-7-17-3-3-7-3-10 0l-1 2-1-2Z"/><path class="tomato-shine" d="M9 24c1-4 3-7 6-8"/></svg></span><h2>Pomodoro</h2></div>
+          <label class="pomodoro-duration-label" for="pomodoro-duration">Focus duration</label>
+          <select id="pomodoro-duration" aria-label="Focus duration"><option value="10">10 minutes</option><option value="20" selected>20 minutes</option><option value="25">25 minutes</option><option value="30">30 minutes</option></select>
+          <p id="pomodoro-time" class="pomodoro-time" role="timer" aria-live="off">20:00</p>
+          <div class="pomodoro-track" aria-hidden="true"><span id="pomodoro-fill"></span></div>
+          <p id="pomodoro-message" class="pomodoro-message" aria-live="polite" hidden>Pomodoro complete!</p>
+          <div class="pomodoro-actions"><button id="pomodoro-toggle" class="button primary" type="button">Start</button><button id="pomodoro-reset" class="button secondary" type="button">Reset</button></div>
+        </section>
+      </div>
     </header>
 
     <section id="setup" class="panel setup" aria-label="Kivo home">
       <nav id="home-tabs" class="home-tabs" role="tablist" aria-label="Home sections">
         <button id="tab-practice" class="home-tab active" type="button" role="tab" aria-selected="true" aria-controls="home-view-practice" tabindex="0" data-home-tab="practice">Practice</button>
+        <button id="tab-progress" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-progress" tabindex="-1" data-home-tab="progress">Progress</button>
         <button id="tab-manage" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-manage" tabindex="-1" data-home-tab="manage">Manage lists</button>
         <button id="tab-review" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-review" tabindex="-1" data-home-tab="review">Review &amp; backup</button>
         <button id="tab-about" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-about" tabindex="-1" data-home-tab="about">About</button>
       </nav>
       <section id="home-view-practice" class="home-view" role="tabpanel" aria-labelledby="tab-practice" tabindex="0">
-        <p class="eyebrow">PRACTICE</p>
         <h1 id="setup-title">Let's practice.</h1>
         <div class="practice-card">
           <div class="list-picker field-group">
@@ -43,16 +58,59 @@
             </div>
             <div id="written-options">
               <label class="check-row"><input id="collect-mistakes" type="checkbox" checked><span>Collect mistakes for review</span></label>
-              <label class="check-row"><input id="hint-counts-as-mastered" type="checkbox"><span>Correct with hint counts as mastered</span></label>
+              <label class="check-row"><input id="hint-counts-as-mastered" type="checkbox"><span>Hints are OK!</span></label>
             </div>
             <div class="button-row start-row"><button id="start-button" class="button primary" type="button">Start practice <span aria-hidden="true">↗</span></button></div>
             <p id="progress-hint" class="hint"></p>
           </div>
         </div>
+        <div id="progress-preview" class="progress-preview" hidden>
+          <span id="progress-preview-summary"></span>
+          <button id="progress-preview-link" class="text-button" type="button">View progress →</button>
+        </div>
+      </section>
+
+      <section id="home-view-progress" class="home-view progress-view" role="tabpanel" aria-labelledby="tab-progress" tabindex="0" hidden>
+        <h1>Your progress.</h1>
+        <p class="progress-intro">A little practice adds up.</p>
+        <section class="lesson-progress" aria-labelledby="lesson-progress-title">
+          <div class="lesson-progress-heading">
+            <h2 id="lesson-progress-title">Your lessons</h2>
+            <div class="lesson-direction" role="group" aria-label="Lesson direction">
+              <button id="progress-direction-ab" class="lesson-direction-button active" type="button" aria-pressed="true">A → B</button>
+              <button id="progress-direction-ba" class="lesson-direction-button" type="button" aria-pressed="false">B → A</button>
+            </div>
+          </div>
+          <div class="lesson-overall" aria-label="Completion across all lists">
+            <div class="lesson-overall-label"><strong id="lesson-overall-count">0 / 0</strong><span>items completed</span><strong id="lesson-overall-percent">0%</strong></div>
+            <div id="lesson-overall-track" class="lesson-overall-track" role="progressbar" aria-label="Overall lesson completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="lesson-overall-fill"></span></div>
+          </div>
+          <div id="lesson-gallery" class="lesson-gallery" aria-label="Progress by vocabulary list"></div>
+          <p id="lesson-empty" class="lesson-empty" hidden>Add a vocabulary list to see lesson progress here.</p>
+          <div id="lesson-pagination" class="lesson-pagination" hidden>
+            <button id="lesson-page-prev" class="text-button" type="button">← Previous</button>
+            <span id="lesson-page-summary"></span>
+            <button id="lesson-page-next" class="text-button" type="button">Next →</button>
+          </div>
+        </section>
+        <section class="activity-section" aria-labelledby="activity-section-title">
+          <h2 id="activity-section-title">Practice activity</h2>
+          <div class="activity-stats" aria-label="Practice activity totals">
+            <div class="activity-stat activity-stat-primary"><strong id="activity-practice-time">0 min</strong><span>practice time</span></div>
+            <div class="activity-stat"><strong id="activity-cards-reviewed">0</strong><span>cards reviewed</span></div>
+            <div class="activity-stat"><strong id="activity-sessions">0</strong><span>sessions</span></div>
+            <div class="activity-stat"><strong id="activity-active-days">0</strong><span>active days</span></div>
+          </div>
+          <section class="activity-week" aria-labelledby="activity-week-title">
+            <div class="activity-week-heading"><h3 id="activity-week-title">Last seven days</h3><span>Practice minutes</span></div>
+            <div id="activity-week-chart" class="activity-week-chart" role="list" aria-label="Daily practice time for the last seven days"></div>
+          </section>
+          <p id="activity-empty" class="activity-empty" hidden>Your practice activity will appear here after you review a card.</p>
+          <p class="activity-note">A written card counts when feedback first appears; its extra near-match try counts as the same review. A card counts again if it returns in the queue. Oral cards count when you press Next card. Sessions count only when you finish them. An active day has counted practice time or a reviewed card. Practice time pauses in hidden tabs and after a minute without activity.</p>
+        </section>
       </section>
 
       <section id="home-view-manage" class="home-view" role="tabpanel" aria-labelledby="tab-manage" tabindex="0" hidden>
-        <p class="eyebrow">LISTS</p>
         <h1>Manage lists.</h1>
         <div class="manage-actions button-row">
           <button id="new-list-button" class="button primary" type="button">New list <span aria-hidden="true">＋</span></button>
@@ -72,7 +130,6 @@
       </section>
 
       <section id="home-view-review" class="home-view" role="tabpanel" aria-labelledby="tab-review" tabindex="0" hidden>
-        <p class="eyebrow">REVIEW</p>
         <h1>Review &amp; backup.</h1>
         <div class="review-quick-row">
           <p><strong id="mistake-total" class="review-count">0</strong><span> collected mistakes</span></p>
@@ -100,7 +157,6 @@
       </section>
 
       <section id="home-view-about" class="home-view about-view" role="tabpanel" aria-labelledby="tab-about" tabindex="0" hidden>
-        <p class="eyebrow">ABOUT</p>
         <h1>About Kivo.</h1>
         <p>Kivo is a small, standalone study tool for vocabulary, concepts and other paired learning material. Choose or create a list, recall each answer, and repeat the entries that need more practice.</p>
         <ul>
@@ -191,10 +247,13 @@
       <div id="completion-stats" class="completion-stats"><div><strong id="final-correct">0</strong><span>entries mastered</span></div><div><strong id="final-independent">0</strong><span>mastered independently</span></div><div><strong id="final-helped">0</strong><span>mastered with help</span></div><div><strong id="final-mistakes">0</strong><span>mistakes along the way</span></div></div>
       <div class="button-row"><button id="completion-mistakes-button" class="button primary" type="button">Review mistakes</button><button id="completion-back-button" class="button secondary" type="button">Return to lists</button></div>
     </section>
+    <footer class="site-footer"><span>Kivo · A project by </span><a href="https://k-it.be" target="_blank" rel="noopener noreferrer">k-it.be</a><span> · </span><a id="endurai-credit" href="https://endurai.k-it.be" target="_blank" rel="noopener noreferrer">endurAI</a></footer>
   </main>
   <script src="list-manager.js?v=2"></script>
   <script src="practice-helpers.js?v=4"></script>
   <script src="themes.js?v=2"></script>
-  <script src="app.js?v=19"></script>
+  <script src="pomodoro.js?v=1"></script>
+  <script src="activity-tracker.js?v=1"></script>
+  <script src="app.js?v=22"></script>
 </body>
 </html>
