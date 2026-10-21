@@ -3,9 +3,12 @@ const assert = require('node:assert/strict');
 const {
   createHintState,
   nextHint,
+  compareAnswers,
   applyHintCap,
   feedbackLabel,
+  feedbackDetail,
   retainForRetry,
+  progressSummary,
   enterAction,
   shouldRequestHint
 } = require('./practice-helpers.js');
@@ -105,6 +108,12 @@ test('feedback labels describe the answer content separately from the hint penal
   assert.equal(applyHintCap(comparison, 1), 'near');
 });
 
+test('answer comparison preserves exact, accent-only, and incorrect distinctions', () => {
+  assert.equal(compareAnswers('suivre l’avancement', 'suivre l’avancement'), 'correct');
+  assert.equal(compareAnswers('ete', 'été'), 'near');
+  assert.equal(compareAnswers('hiver', 'été'), 'wrong');
+});
+
 test('correct answers leave the queue and near or wrong answers return to its end', () => {
   const first = { id: 1 }, second = { id: 2 }, third = { id: 3 };
   const queue = [first, second, third];
@@ -117,6 +126,60 @@ test('correct answers leave the queue and near or wrong answers return to its en
   const only = [first];
   retainForRetry(only, 'wrong');
   assert.deepEqual(only, [first]);
+});
+
+test('full practice progress counts unique mastered entries, not answer attempts', () => {
+  const queue = Array.from({ length: 35 }, (_, id) => ({ id, pair: { key: `k${id}`, value: `v${id}` } }));
+  assert.deepEqual(progressSummary(queue.length, queue), { total: 35, remaining: 35, mastered: 0, percentage: 0 });
+
+  retainForRetry(queue, 'wrong');
+  assert.deepEqual(progressSummary(35, queue), { total: 35, remaining: 35, mastered: 0, percentage: 0 });
+  for (let mastered = 1; mastered <= 12; mastered++) {
+    retainForRetry(queue, 'correct');
+    assert.equal(progressSummary(35, queue).mastered, mastered);
+  }
+  assert.deepEqual(progressSummary(35, queue), { total: 35, remaining: 23, mastered: 12, percentage: 34 });
+});
+
+test('progressive practice uses only the entries loaded for that session', () => {
+  const queue = Array.from({ length: 8 }, (_, id) => ({ id: `saved-${id}`, pair: { key: `k${id}`, value: `v${id}` } }));
+  for (let index = 0; index < 4; index++) retainForRetry(queue, 'correct');
+  assert.deepEqual(progressSummary(8, queue), { total: 8, remaining: 4, mastered: 4, percentage: 50 });
+});
+
+test('mistake-only practice has its own denominator and correct answers clear progress', () => {
+  const queue = [
+    { id: 'mistake-a', pair: { key: 'a', value: 'one' } },
+    { id: 'mistake-b', pair: { key: 'b', value: 'two' } }
+  ];
+  assert.equal(progressSummary(queue.length, queue).total, 2);
+  retainForRetry(queue, 'correct');
+  assert.deepEqual(progressSummary(2, queue), { total: 2, remaining: 1, mastered: 1, percentage: 50 });
+  retainForRetry(queue, 'correct');
+  assert.deepEqual(progressSummary(2, queue), { total: 2, remaining: 0, mastered: 2, percentage: 100 });
+});
+
+test('wrong, accent-only, and hint-limited answers stay in the queue without progress', () => {
+  const queue = [
+    { id: 'a', pair: { key: 'a', value: 'un' } },
+    { id: 'b', pair: { key: 'b', value: 'deux' } }
+  ];
+  const before = progressSummary(queue.length, queue);
+  retainForRetry(queue, 'wrong');
+  assert.deepEqual(progressSummary(2, queue), before);
+  assert.equal(feedbackDetail('wrong', 0), 'This entry will return later.');
+
+  const accentResult = compareAnswers('ete', 'été');
+  retainForRetry(queue, accentResult);
+  assert.deepEqual(progressSummary(2, queue), before);
+  assert.match(feedbackDetail('near', 0), /accents differ/);
+
+  const hintedResult = applyHintCap('correct', 1);
+  assert.equal(hintedResult, 'near');
+  retainForRetry(queue, hintedResult);
+  assert.deepEqual(progressSummary(2, queue), before);
+  assert.match(feedbackDetail('correct', 1), /hint keeps this entry/);
+  assert.match(feedbackDetail('wrong', 3), /revealed entry stays/);
 });
 
 test('Enter checks before evaluation and advances after evaluation', () => {

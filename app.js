@@ -11,8 +11,8 @@
     'practice-options','direction','mode','collect-mistakes','start-button','progress-hint','export-progress','progress-file','reset-progress',
     'editor-back-button','editor-name','editor-key-label','editor-value-label','entry-search','add-entry-button','editor-count','editor-status',
     'editor-key-heading','editor-value-heading','editor-rows','save-list-button','discard-list-button','editor-export-button',
-    'leave-button','list-label','remaining-count','correct-count','mistake-count','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
-    'feedback','feedback-title','feedback-answer','lookup-answer','final-correct','final-mistakes','completion-mistakes-button','completion-back-button'
+    'leave-button','list-label','remaining-count','correct-count','mistake-count','session-total','progress-track','progress-fill','progress-percentage','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
+    'feedback','feedback-title','feedback-mark','feedback-answer','feedback-detail','lookup-answer','final-correct','final-mistakes','completion-mistakes-button','completion-back-button'
   ];
   const els = Object.fromEntries(ids.map(id => [id.replace(/-([a-z])/g, (_, character) => character.toUpperCase()), $(id)]));
 
@@ -20,18 +20,10 @@
   try { storage = window.localStorage; storage.getItem(Lists.WORKSPACE_KEY); } catch { storage = null; }
   let workspace = Lists.loadWorkspace(storage);
   let storageWorks = Boolean(storage);
-  let queue = [], current = null, hintState = null, evaluated = false, correct = 0, sessionMistakes = 0;
+  let queue = [], current = null, hintState = null, evaluated = false, correct = 0, sessionMistakes = 0, sessionTotal = 0;
   let currentListId = null, practiceDirection = 'key-value', mistakePractice = false;
   let draft = null, editorDirty = false;
 
-  const normalize = value => String(value).normalize('NFC').replace(/[’‘ʼ＇`´]/g, "'").replace(/\s+/gu, ' ').trim().toLowerCase();
-  const stripMarks = value => value.normalize('NFD').replace(/\p{M}/gu, '');
-  function compareAnswers(answer, expected) {
-    const actual = normalize(answer), target = normalize(expected);
-    if (actual === target) return 'correct';
-    if (stripMarks(actual) === stripMarks(target)) return 'near';
-    return 'wrong';
-  }
   function shuffled(items) {
     const result = items.slice();
     for (let index = result.length - 1; index > 0; index--) {
@@ -248,6 +240,7 @@
       entries = saved === null ? list.entries : saved;
     }
     queue = shuffled(entries.map(entry => ({ id: entry.id, pair: { key: entry.key, value: entry.value } })));
+    sessionTotal = queue.length;
     correct = 0; sessionMistakes = 0;
     if (!queue.length) {
       if (mistakesOnly) setListStatus('There are no collected mistakes for this list yet.');
@@ -262,6 +255,18 @@
     Lists.saveProgress(workspace, currentListId, practiceDirection, queue);
     persist();
   }
+  function renderSessionProgress() {
+    const progress = Practice.progressSummary(sessionTotal, queue);
+    els.correctCount.textContent = String(progress.mastered);
+    els.sessionTotal.textContent = String(progress.total);
+    els.remainingCount.textContent = String(progress.remaining);
+    els.mistakeCount.textContent = String(sessionMistakes);
+    els.progressTrack.setAttribute('aria-valuemax', String(progress.total));
+    els.progressTrack.setAttribute('aria-valuenow', String(progress.mastered));
+    els.progressTrack.setAttribute('aria-valuetext', `${progress.mastered} of ${progress.total} mastered`);
+    els.progressFill.style.width = `${progress.percentage}%`;
+    els.progressPercentage.textContent = `${progress.percentage}%`;
+  }
   function renderQuestion() {
     if (!queue.length) { finish(); return; }
     current = queue[0]; current.direction = directionFor(); evaluated = false;
@@ -274,7 +279,7 @@
     els.answer.placeholder = `Type ${current.direction === 'key-value' ? list.valueLabel : list.keyLabel}…`;
     hintState = Practice.createHintState(expected);
     els.prompt.textContent = source;
-    els.remainingCount.textContent = queue.length; els.correctCount.textContent = correct; els.mistakeCount.textContent = sessionMistakes;
+    renderSessionProgress();
     requestAnimationFrame(() => els.answer.focus());
   }
   function recordMistake(entry) {
@@ -285,12 +290,18 @@
   function checkAnswer() {
     if (evaluated) return;
     const expected = current.direction === 'key-value' ? current.pair.value : current.pair.key;
-    const comparison = compareAnswers(els.answer.value, expected);
+    const comparison = Practice.compareAnswers(els.answer.value, expected);
     const result = Practice.applyHintCap(comparison, hintState.level);
     const label = Practice.feedbackLabel(comparison, hintState.level);
+    const detail = Practice.feedbackDetail(comparison, hintState.level);
     evaluated = true;
-    els.feedback.className = `feedback ${result}`; els.feedback.hidden = false;
+    els.feedback.className = `feedback ${result}`;
+    if (result === 'correct' && hintState.level === 0) els.feedback.classList.add('is-reward');
+    else if (result === 'wrong') els.feedback.classList.add('is-incorrect');
+    els.feedback.hidden = false;
     els.feedbackTitle.textContent = `${label} ↵`; els.feedbackAnswer.textContent = expected;
+    els.feedbackDetail.textContent = detail;
+    els.feedbackMark.hidden = result !== 'correct' || hintState.level > 0;
     els.lookupAnswer.href = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(expected)}&op=translate`;
     els.lookupAnswer.hidden = false;
     if (hintState.level > 0) {
@@ -306,7 +317,7 @@
     }
     Practice.retainForRetry(queue, result);
     if (mistakePractice) persist(); else savePracticeProgress();
-    els.remainingCount.textContent = queue.length; els.correctCount.textContent = correct; els.mistakeCount.textContent = sessionMistakes;
+    renderSessionProgress();
     els.answer.disabled = true;
     els.checkButton.textContent = queue.length === 0 && result === 'correct' ? 'Finish ↵' : 'Continue ↵';
     els.checkButton.focus();
@@ -400,5 +411,5 @@
 
   persist();
   renderSetup();
-  window.Kivo = { compareAnswers, normalize, ...Practice, ...Lists };
+  window.Kivo = { ...Practice, ...Lists };
 })();

@@ -3,6 +3,15 @@
   'use strict';
 
   const isLetter = character => /\p{L}/u.test(character);
+  const normalize = value => String(value).normalize('NFC').replace(/[’‘ʼ＇`´]/g, "'").replace(/\s+/gu, ' ').trim().toLowerCase();
+  const stripMarks = value => value.normalize('NFD').replace(/\p{M}/gu, '');
+
+  function compareAnswers(answer, expected) {
+    const actual = normalize(answer), target = normalize(expected);
+    if (actual === target) return 'correct';
+    if (stripMarks(actual) === stripMarks(target)) return 'near';
+    return 'wrong';
+  }
 
   function createHintState(expected, random = Math.random) {
     const answer = String(expected).normalize('NFC');
@@ -63,6 +72,27 @@
     return queue;
   }
 
+  function progressSummary(total, queue) {
+    const uniqueIds = new Set(queue.map(item => item.id ?? JSON.stringify([item.pair?.key, item.pair?.value])));
+    const sessionTotal = Math.max(0, Number(total) || 0);
+    const remaining = Math.min(sessionTotal, uniqueIds.size);
+    const mastered = sessionTotal - remaining;
+    return {
+      total: sessionTotal,
+      remaining,
+      mastered,
+      percentage: sessionTotal ? Math.round(mastered / sessionTotal * 100) : 0
+    };
+  }
+
+  function feedbackDetail(comparison, hintLevel) {
+    if (hintLevel >= 3) return 'The revealed entry stays in the queue to try again.';
+    if (comparison === 'correct' && hintLevel > 0) return 'Correct answer, but the hint keeps this entry in the retry queue.';
+    if (comparison === 'near') return 'The accents differ; this entry will return later.';
+    if (comparison === 'correct') return 'One more entry mastered and removed from this session.';
+    return 'This entry will return later.';
+  }
+
   function enterAction(evaluated) {
     return evaluated ? 'advance' : 'check';
   }
@@ -71,7 +101,7 @@
     return key === ' ' && answer.length === 0 && !evaluated;
   }
 
-  const helpers = { createHintState, nextHint, applyHintCap, feedbackLabel, retainForRetry, enterAction, shouldRequestHint };
+  const helpers = { normalize, compareAnswers, createHintState, nextHint, applyHintCap, feedbackLabel, feedbackDetail, retainForRetry, progressSummary, enterAction, shouldRequestHint };
   if (typeof module !== 'undefined' && module.exports) module.exports = helpers;
   if (typeof window !== 'undefined') window.KivoPractice = helpers;
 })();

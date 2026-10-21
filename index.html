@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f6f2">
   <title>Kivo — practice with your lists</title>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <main class="shell">
@@ -113,7 +113,11 @@
 
     <section id="practice" class="panel practice" hidden aria-labelledby="prompt">
       <div class="practice-top"><button id="leave-button" class="text-button" type="button">← Leave exercise</button><span id="list-label" class="list-label"></span></div>
-      <div class="stats" aria-label="Exercise progress"><div><span class="stat-number" id="remaining-count">0</span><span class="stat-label">remaining</span></div><div><span class="stat-number" id="correct-count">0</span><span class="stat-label">correct</span></div><div><span class="stat-number" id="mistake-count">0</span><span class="stat-label">mistakes</span></div></div>
+      <div class="session-progress" aria-label="Session progress">
+        <div class="progress-heading"><p class="progress-primary"><strong id="correct-count">0</strong><span aria-hidden="true"> / </span><span id="session-total">0</span><span> mastered</span></p><span id="feedback-mark" class="feedback-mark" aria-hidden="true" hidden>✓</span></div>
+        <div class="progress-bar-row"><div id="progress-track" class="progress-track" role="progressbar" aria-label="Entries mastered" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0 of 0 mastered"><span id="progress-fill" class="progress-fill"></span></div><span id="progress-percentage" class="progress-percentage">0%</span></div>
+        <p class="progress-secondary"><span><strong id="remaining-count">0</strong> remaining</span><span><strong id="mistake-count">0</strong> mistakes</span></p>
+      </div>
       <div class="question-card">
         <h1 id="prompt" tabindex="-1"></h1>
         <form id="answer-form" autocomplete="off">
@@ -122,7 +126,7 @@
           <button id="check-button" class="button primary" type="submit">Check <span aria-hidden="true">↵</span></button>
         </form>
         <div id="hint-display" class="hint-display" aria-live="polite" hidden><span id="hint-text" class="hint-text"></span><span id="hint-rating" class="hint-rating"></span></div>
-        <div id="feedback" class="feedback" aria-live="polite" hidden><p id="feedback-title"></p><p id="feedback-answer"></p></div>
+        <div id="feedback" class="feedback" aria-live="polite" hidden><p id="feedback-title" class="feedback-title"></p><p id="feedback-answer" class="feedback-answer"></p><p id="feedback-detail" class="feedback-detail"></p></div>
         <div class="lookup-row"><a id="lookup-answer" class="lookup-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="Look up answer in Google Translate" title="Look up answer in Google Translate" hidden>📖</a></div>
       </div>
     </section>
@@ -135,7 +139,7 @@
     </section>
   </main>
   <script src="list-manager.js?v=2"></script>
-  <script src="practice-helpers.js?v=2"></script>
-  <script src="app.js?v=7"></script>
+  <script src="practice-helpers.js?v=3"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
