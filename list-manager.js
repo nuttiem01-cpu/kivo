@@ -119,6 +119,22 @@
   }
 
   function parseCSV(text, idFactory = createId) {
+    let separator = ',';
+    const delimiterCounts = { ',': 0, ';': 0, '\t': 0 };
+    let inFirstRow = false, firstRowStarted = false;
+    for (let index = 0; index < text.length; index++) {
+      const character = text[index];
+      if (!firstRowStarted && !/\s/.test(character)) firstRowStarted = true;
+      if (character === '"') {
+        if (inFirstRow && text[index + 1] === '"') index++;
+        else inFirstRow = !inFirstRow;
+      } else if (!inFirstRow && (character === '\r' || character === '\n')) {
+        if (firstRowStarted) break;
+      } else if (!inFirstRow && delimiterCounts[character] !== undefined) delimiterCounts[character]++;
+    }
+    if (delimiterCounts[';'] > delimiterCounts[','] && delimiterCounts[';'] >= delimiterCounts['\t']) separator = ';';
+    else if (delimiterCounts['\t'] > delimiterCounts[','] && delimiterCounts['\t'] > delimiterCounts[';']) separator = '\t';
+
     const rows = [];
     let row = [], field = '', quoted = false;
     for (let index = 0; index < text.length; index++) {
@@ -130,7 +146,7 @@
       } else if (character === '"') {
         if (field.length) throw new Error('Unexpected quote in an unquoted field.');
         quoted = true;
-      } else if (character === ',') {
+      } else if (character === separator) {
         row.push(field); field = '';
       } else if (character === '\n' || character === '\r') {
         if (character === '\r' && text[index + 1] === '\n') index++;
@@ -142,9 +158,19 @@
     while (rows.length && rows[0].every(value => !value.trim())) rows.shift();
     if (!rows.length) throw new Error('The CSV is empty.');
 
-    const headers = rows.shift().map(value => value.replace(/^\uFEFF/, '').trim().toLowerCase());
-    const keyIndex = headers.indexOf('key'), valueIndex = headers.indexOf('value');
-    if (keyIndex < 0 || valueIndex < 0 || keyIndex === valueIndex) throw new Error('The first row must include separate “key” and “value” headers.');
+    const originalHeaders = rows.shift().map(value => value.replace(/^\uFEFF/, '').trim());
+    const normalizeHeader = value => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    const headers = originalHeaders.map(normalizeHeader);
+    const keyHeaders = new Set(['key', 'term', 'terme', 'word', 'mot', 'fr', 'francais', 'frans', 'french', 'anglais', 'english', 'en', 'concept', 'question', 'prompt', 'source', 'capital', 'city', 'name', 'label', 'expression']);
+    const valueHeaders = new Set(['value', 'answer', 'response', 'translation', 'translated', 'traduction', 'reponse', 'definition', 'meaning', 'description', 'nl', 'nederlands', 'neerlandais', 'dutch', 'country', 'target']);
+    const matchesHeader = (header, aliases) => header.split(' ').some(part => aliases.has(part));
+    let keyIndex = headers.findIndex(header => matchesHeader(header, keyHeaders));
+    let valueIndex = headers.findIndex(header => matchesHeader(header, valueHeaders));
+    if ((keyIndex < 0 || valueIndex < 0 || keyIndex === valueIndex) && originalHeaders.length === 2 && originalHeaders.every(Boolean)) {
+      keyIndex = 0;
+      valueIndex = 1;
+    }
+    if (keyIndex < 0 || valueIndex < 0 || keyIndex === valueIndex) throw new Error('The first row must include recognizable column headers, such as “key,value”, “French,Dutch” or “term,definition”.');
 
     const entries = [], seen = new Set();
     let duplicateCount = 0;
@@ -158,7 +184,12 @@
       seen.add(signature);
       entries.push({ id: idFactory(), key, value });
     }
-    return { entries, duplicateCount };
+    return {
+      entries,
+      duplicateCount,
+      keyLabel: originalHeaders[keyIndex] || 'Key',
+      valueLabel: originalHeaders[valueIndex] || 'Value'
+    };
   }
 
   function encodeCSV(entries) {

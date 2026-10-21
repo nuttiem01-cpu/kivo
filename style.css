@@ -757,6 +757,8 @@ h1 {
   font-size:16.4px;
   color:var(--muted)
 }
+.oral-progress { margin:0; font-size:16px }
+.oral-progress strong { font-size:29px; color:var(--green); font-variant-numeric:tabular-nums }
 .progress-primary strong {
   color:var(--ink);
   font-size:29.4px;
@@ -772,6 +774,7 @@ h1 {
   font-size:14.2px
 }
 .progress-track {
+  display:flex;
   flex:1;
   min-width:0;
   height:9px;
@@ -782,12 +785,52 @@ h1 {
 }
 .progress-fill {
   display:block;
+  flex:0 0 auto;
   width:0;
   height:100%;
   border-radius:inherit;
   background:var(--green);
   transition:width 260ms cubic-bezier(.2,.7,.2,1)
 }
+.progress-fill-helped {
+  background:var(--orange)
+}
+/* Oral practice reuses the same bar as written practice, with one solid segment. */
+:root[data-theme] .practice.oral-mode .progress-fill {
+  border-radius:inherit;
+  background:var(--green)
+}
+.progress-meta {
+  display:flex;
+  align-items:center;
+  flex-wrap:nowrap;
+  gap:14px;
+  min-width:0;
+  margin:0 0 2px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.25
+}
+.progress-meta-item {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  white-space:nowrap
+}
+.progress-meta strong { color:var(--ink); font-variant-numeric:tabular-nums }
+.progress-meta-tail {
+  margin-left:auto;
+  white-space:nowrap;
+  text-align:right
+}
+.mastery-key {
+  display:inline-block;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:var(--green)
+}
+.mastery-key-helped { background:var(--orange) }
 .progress-bar-row {
   display:flex;
   align-items:center;
@@ -799,18 +842,6 @@ h1 {
   color:var(--muted);
   text-align:right;
   font-size:13px;
-  font-weight:700;
-  font-variant-numeric:tabular-nums
-}
-.progress-secondary {
-  display:flex;
-  justify-content:space-between;
-  margin:0;
-  color:var(--muted);
-  font-size:13px
-}
-.progress-secondary strong {
-  color:var(--ink);
   font-weight:700;
   font-variant-numeric:tabular-nums
 }
@@ -869,7 +900,31 @@ h1 {
   box-shadow:0 0 0 3px var(--focus-bg)
 }
 #answer-form .button {
-  min-width:112px
+  width:56px;
+  min-width:56px;
+  padding:0
+}
+#check-button.has-label {
+  width:auto;
+  min-width:94px;
+  padding:0 14px
+}
+.practice.oral-mode #answer-form {
+  justify-content:center;
+  margin-top:20px
+}
+.practice.oral-mode #answer-form .button {
+  align-self:center
+}
+.practice.oral-mode .feedback {
+  margin-top:18px;
+  padding:9px 14px
+}
+.practice.oral-mode .feedback-answer {
+  margin-top:0;
+  font-size:clamp(35px,6vw,48px);
+  line-height:1.12;
+  overflow-wrap:anywhere
 }
 .hint-display {
   display:flex;
@@ -911,7 +966,7 @@ h1 {
   margin:0
 }
 .feedback-title {
-  font-size:19.6px;
+  font-size:15.5px;
   font-weight:700
 }
 .feedback-answer {
@@ -1028,8 +1083,9 @@ kbd {
   margin-bottom:28px
 }
 .completion-stats {
-  display:flex;
-  gap:50px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:18px 28px;
   padding:20px 0 28px;
   border-top:1px solid var(--line);
   border-bottom:1px solid var(--line);
@@ -1048,6 +1104,8 @@ kbd {
   font-size:13px;
   color:var(--muted)
 }
+.completion-stats div:nth-child(2) strong { color:var(--green) }
+.completion-stats div:nth-child(3) strong { color:var(--orange) }
 .mistake-actions {
   display:flex;
   gap:18px;
@@ -1147,6 +1205,7 @@ footer {
 #answer-form .button {
   min-height:52px
 }
+.practice:not(.oral-mode) #answer-form .button { align-self:flex-end }
 .progress-primary {
   font-size:15.2px
 }
@@ -1241,6 +1300,7 @@ footer {
   border-radius:0;
   background:repeating-linear-gradient(90deg,#56f2ca 0 12px,transparent 12px 15px)
 }
+:root[data-theme="arcade-86"] .progress-fill-helped { background:var(--orange) }
 :root[data-theme="arcade-86"] .progress-primary strong { font-size:34px }
 :root[data-theme="arcade-86"] .completion-stats strong { font-size:29px }
 :root[data-theme="arcade-86"] .feedback.correct.is-reward {
@@ -1294,10 +1354,11 @@ footer {
 }
 :root[data-theme="maze"] .progress-fill {
   border-radius:5px;
-  background-color:#ffe14a;
+  background-color:var(--green);
   background-image:radial-gradient(circle,#09101e 1.2px,transparent 1.5px);
   background-size:14px 100%
 }
+:root[data-theme="maze"] .progress-fill-helped { background:var(--orange) }
 :root[data-theme="maze"] .progress-primary strong {
   color:#ffe14a;
   font-size:32px;
@@ -1437,7 +1498,7 @@ footer {
 .quest-map-footer { padding:8px 5px 1px }
 :root[data-theme="quest"] .session-progress {
   display:grid;
-  grid-template-columns:1fr auto;
+  grid-template-columns:minmax(0,1fr);
   gap:3px 16px;
   align-items:center;
   padding:10px 13px;
@@ -1449,9 +1510,10 @@ footer {
 :root[data-theme="quest"] .progress-primary strong { color:#8d4a29; font-size:27px }
 :root[data-theme="quest"] .progress-bar-row { grid-column:1; grid-row:2; margin:2px 0 0 }
 :root[data-theme="quest"] .progress-track { height:12px; border:2px solid #476747; border-radius:2px; background:#d4d9ba }
-:root[data-theme="quest"] .progress-fill { border-radius:0; background:repeating-linear-gradient(90deg,#e8bd50 0 9px,#dca53a 9px 12px); transition:width 480ms steps(8,end) }
+:root[data-theme="quest"] .progress-fill { border-radius:0; background:var(--green); transition:width 480ms steps(8,end) }
+:root[data-theme="quest"] .progress-fill-helped { background:var(--orange) }
+:root[data-theme="quest"] .progress-meta { grid-column:1; grid-row:3 }
 :root[data-theme="quest"] .progress-percentage { color:#536544 }
-:root[data-theme="quest"] .progress-secondary { grid-column:2; grid-row:1 / span 2; display:grid; gap:3px; align-content:center; min-width:110px; font-size:12px }
 :root[data-theme="quest"] .question-card { margin:18px 0 0; padding:24px 22px 18px; border:4px solid #8d6039; border-radius:3px; background:#fff8dc; box-shadow:inset 0 0 0 3px #f0d68e,0 4px 0 #6f5437 }
 :root[data-theme="quest"] .question-card::before { content:"✦  TRAVELER, WHAT IS…"; display:block; margin:0 0 12px; color:#7e6639; font:800 12px ui-monospace,"Cascadia Code","Segoe UI Mono",monospace; letter-spacing:.12em }
 :root[data-theme="quest"] .question-card h1 { min-height:1.25em; margin:0 0 18px; color:#253a2d; font-size:clamp(34px,6vw,48px); line-height:1.15 }
@@ -1481,7 +1543,12 @@ footer {
   :root[data-theme="quest"] .practice { padding:14px 13px 19px }
   .quest-landscape { height:165px }
   :root[data-theme="quest"] .question-card { padding:19px 14px 14px }
-  :root[data-theme="quest"] .progress-secondary { min-width:87px; font-size:11px }
+}
+@media(max-width:560px) {
+  .progress-meta { gap:8px; font-size:clamp(9px,3.2vw,11.5px) }
+  .progress-meta-item { gap:4px }
+  .mastery-key { width:6px; height:6px }
+  .completion-stats { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 20px }
 }
 @media(prefers-reduced-motion:reduce) {
   :root[data-theme="quest"] .quest-hero,:root[data-theme="quest"] .progress-fill,:root[data-theme="quest"] .feedback.correct.is-reward,:root[data-theme="quest"] .quest-finish-hero,:root[data-theme="quest"] .quest-finish-chest { animation:none!important; transition:none!important }

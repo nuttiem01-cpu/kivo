@@ -47,6 +47,23 @@ test('CSV import skips normalized duplicate pairs and reports their count', () =
   assert.match(Lists.validateEntries([{ key: 'a', value: 'b' }, { key: ' a ', value: 'b' }]), /duplicate/);
 });
 
+test('CSV import recognizes French and Dutch headers with UTF-8 BOM and semicolon delimiter', () => {
+  const parsed = Lists.parseCSV('\uFEFFFrançais;Néerlandais\r\nbonjour;hallo\r\nmerci;bedankt', idFactory());
+  assert.deepEqual(parsed.entries.map(({ key, value }) => ({ key, value })), [
+    { key: 'bonjour', value: 'hallo' },
+    { key: 'merci', value: 'bedankt' }
+  ]);
+  assert.equal(parsed.keyLabel, 'Français');
+  assert.equal(parsed.valueLabel, 'Néerlandais');
+});
+
+test('CSV import accepts other two-column labels as editable list metadata', () => {
+  const parsed = Lists.parseCSV('Latin term;English explanation\namo;I love', idFactory());
+  assert.equal(parsed.keyLabel, 'Latin term');
+  assert.equal(parsed.valueLabel, 'English explanation');
+  assert.deepEqual(parsed.entries.map(({ key, value }) => ({ key, value })), [{ key: 'amo', value: 'I love' }]);
+});
+
 test('list editing preserves entry IDs and entry deletion removes only the selected row', () => {
   const makeId = idFactory(), workspace = Lists.createWorkspace();
   const list = Lists.addList(workspace, 'Editable', [{ key: 'old', value: 'value' }, { key: 'keep', value: 'this' }], makeId);

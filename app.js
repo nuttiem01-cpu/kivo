@@ -6,13 +6,13 @@
   const Practice = window.KivoPractice;
   const Themes = window.KivoThemes;
   const ids = [
-    'setup','editor','practice','completion','completion-eyebrow','completion-title','celebration','theme-picker','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','list-status','new-list-button','import-list-button','csv-file','list-count','list-overview','delete-selected-lists','delete-all-lists',
+    'setup','editor','practice','completion','completion-eyebrow','completion-title','completion-intro','celebration','theme-picker','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','list-status','new-list-button','import-list-button','csv-file','list-count','list-overview','delete-selected-lists','delete-all-lists',
     'mistakes-review','mistake-total','mistake-empty','mistake-key-heading','mistake-value-heading','mistake-rows','practice-mistakes-button','export-mistakes','clear-mistakes',
-    'practice-options','direction','mode','collect-mistakes','start-button','progress-hint','export-progress','progress-file','reset-progress',
+    'practice-options','direction','mode','written-options','collect-mistakes','hint-counts-as-mastered','start-button','progress-hint','export-progress','progress-file','reset-progress',
     'editor-back-button','editor-name','editor-key-label','editor-value-label','entry-search','add-entry-button','editor-count','editor-status',
     'editor-key-heading','editor-value-heading','editor-rows','save-list-button','discard-list-button','editor-export-button',
-    'leave-button','list-label','quest-world','quest-score','quest-hero','quest-progress-label','remaining-count','correct-count','mistake-count','session-total','progress-track','progress-fill','progress-percentage','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
-    'feedback','feedback-title','feedback-mark','feedback-answer','feedback-detail','lookup-answer','final-correct','final-mistakes','completion-mistakes-button','completion-back-button'
+    'leave-button','list-label','quest-world','quest-score','quest-hero','quest-progress-label','oral-progress','oral-reviewed-count','oral-total-count','mastery-heading','mastery-progress-row','mastery-meta','remaining-count','correct-count','mastered-independent-count','mastered-helped-count','mistake-count','session-total','progress-track','progress-fill','progress-fill-helped','progress-percentage','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
+    'feedback','feedback-title','feedback-mark','feedback-answer','feedback-detail','lookup-answer','completion-stats','final-correct','final-independent','final-helped','final-mistakes','completion-mistakes-button','completion-back-button'
   ];
   const els = Object.fromEntries(ids.map(id => [id.replace(/-([a-z])/g, (_, character) => character.toUpperCase()), $(id)]));
 
@@ -21,9 +21,11 @@
   let activeTheme = Themes.apply(Themes.read(storage));
   let workspace = Lists.loadWorkspace(storage);
   let storageWorks = Boolean(storage);
-  let queue = [], current = null, hintState = null, evaluated = false, correct = 0, sessionMistakes = 0, sessionTotal = 0;
+  let queue = [], current = null, hintState = null, evaluated = false, masteredWithHelp = 0, allowHelpMastery = false, sessionMistakes = 0, sessionTotal = 0;
   let currentListId = null, practiceDirection = 'key-value', mistakePractice = false;
+  let oralPractice = false, oralAnswerRevealed = false, oralReviewed = 0;
   let sessionFinished = false;
+  let nearRetryUsed = false;
   let draft = null, editorDirty = false;
   let homeView = 'practice';
 
@@ -41,6 +43,11 @@
     els.editor.hidden = section !== 'editor';
     els.practice.hidden = section !== 'practice';
     els.completion.hidden = section !== 'completion';
+  }
+  function setExerciseAction(accessibleLabel, isFinish = false) {
+    els.checkButton.textContent = isFinish ? 'Finish' : '↵';
+    els.checkButton.setAttribute('aria-label', accessibleLabel);
+    els.checkButton.classList.toggle('has-label', isFinish);
   }
   function setHomeView(view) {
     const views = {
@@ -87,8 +94,18 @@
     const list = selectedList();
     if (!list) { els.progressHint.textContent = ''; els.resetProgress.disabled = true; return; }
     const saved = workspace.progress[list.id]?.[els.direction.value];
-    els.progressHint.textContent = saved ? `${saved.remaining.length} item${saved.remaining.length === 1 ? '' : 's'} saved for this list and direction.` : 'Progressive mode will start with every entry.';
     els.resetProgress.disabled = !saved;
+    if (els.mode.value === 'oral') {
+      els.progressHint.textContent = '';
+      return;
+    }
+    els.progressHint.textContent = saved ? `${saved.remaining.length} item${saved.remaining.length === 1 ? '' : 's'} saved for this list and direction.` : 'Progressive mode will start with every entry.';
+  }
+  function renderPracticeMode() {
+    const oralSelected = els.mode.value === 'oral';
+    els.writtenOptions.hidden = oralSelected;
+    els.progressHint.hidden = oralSelected;
+    els.startButton.textContent = oralSelected ? 'Start oral practice ↗' : 'Start practice ↗';
   }
   function renderMistakes(list) {
     const mistakes = list ? workspace.mistakes[list.id] || [] : [];
@@ -218,7 +235,10 @@
       try {
         const parsed = Lists.parseCSV(await file.text());
         if (!parsed.entries.length) throw new Error('This CSV has no entries.');
-        const list = Lists.addList(workspace, fileBaseName(file.name), parsed.entries);
+        const list = Lists.addList(workspace, fileBaseName(file.name), parsed.entries, undefined, {
+          keyLabel: parsed.keyLabel,
+          valueLabel: parsed.valueLabel
+        });
         workspace.activeListId = practiceListId;
         imported++;
         skippedDuplicates += parsed.duplicateCount;
@@ -352,39 +372,72 @@
     const list = selectedList();
     if (!list) return;
     currentListId = list.id; practiceDirection = els.direction.value; mistakePractice = mistakesOnly;
+    oralPractice = !mistakesOnly && els.mode.value === 'oral';
+    allowHelpMastery = !oralPractice && els.hintCountsAsMastered.checked;
+    oralAnswerRevealed = false; oralReviewed = 0;
     let entries;
     if (mistakesOnly) entries = (workspace.mistakes[list.id] || []).map(entry => ({ ...entry }));
+    else if (oralPractice) entries = list.entries;
     else {
       const saved = !full ? Lists.progressQueue(workspace, list, practiceDirection) : null;
       entries = saved === null ? list.entries : saved;
     }
     queue = shuffled(entries.map(entry => ({ id: entry.id, pair: { key: entry.key, value: entry.value } })));
     sessionTotal = queue.length;
-    correct = 0; sessionMistakes = 0;
+    masteredWithHelp = 0; sessionMistakes = 0;
     sessionFinished = false;
     if (!queue.length) {
       if (mistakesOnly) setListStatus('There are no collected mistakes for this list yet.');
       else finish();
       return;
     }
-    els.listLabel.textContent = `${list.name} · ${queue.length} ${mistakesOnly ? 'mistake' : 'entry'}${queue.length === 1 ? '' : 's'}`;
+    const itemLabel = oralPractice ? 'card' : mistakesOnly ? 'mistake' : 'entry';
+    els.listLabel.textContent = `${list.name} · ${queue.length} ${itemLabel}${queue.length === 1 ? '' : 's'}`;
     show('practice'); renderQuestion();
   }
   function savePracticeProgress() {
-    if (mistakePractice || !currentListId) return;
+    if (oralPractice || mistakePractice || !currentListId) return;
     Lists.saveProgress(workspace, currentListId, practiceDirection, queue);
     persist();
   }
   function renderSessionProgress() {
-    const progress = Practice.progressSummary(sessionTotal, queue);
+    if (oralPractice) {
+      els.oralProgress.hidden = false;
+      els.oralReviewedCount.textContent = String(oralReviewed);
+      els.oralTotalCount.textContent = String(sessionTotal);
+      els.masteryHeading.hidden = true;
+      els.masteryProgressRow.hidden = false;
+      els.masteryMeta.hidden = true;
+      const percentage = sessionTotal ? Math.round(oralReviewed / sessionTotal * 100) : 0;
+      els.progressTrack.setAttribute('aria-label', 'Cards reviewed');
+      els.progressTrack.setAttribute('aria-valuemax', String(sessionTotal));
+      els.progressTrack.setAttribute('aria-valuenow', String(oralReviewed));
+      els.progressTrack.setAttribute('aria-valuetext', `${oralReviewed} of ${sessionTotal} cards reviewed`);
+      els.progressFill.style.width = `${percentage}%`;
+      els.progressFillHelped.style.width = '0%';
+      els.progressPercentage.textContent = `${percentage}%`;
+      els.questWorld.hidden = true;
+      return;
+    }
+    els.oralProgress.hidden = true;
+    els.masteryHeading.hidden = false;
+    els.masteryProgressRow.hidden = false;
+    els.masteryMeta.hidden = false;
+    const progress = Practice.progressSummary(sessionTotal, queue, masteredWithHelp);
     els.correctCount.textContent = String(progress.mastered);
+    els.masteredIndependentCount.textContent = String(progress.masteredIndependently);
+    els.masteredHelpedCount.textContent = String(progress.masteredWithHelp);
     els.sessionTotal.textContent = String(progress.total);
     els.remainingCount.textContent = String(progress.remaining);
     els.mistakeCount.textContent = String(sessionMistakes);
+    els.progressTrack.setAttribute('aria-label', 'Entries completed');
     els.progressTrack.setAttribute('aria-valuemax', String(progress.total));
     els.progressTrack.setAttribute('aria-valuenow', String(progress.mastered));
-    els.progressTrack.setAttribute('aria-valuetext', `${progress.mastered} of ${progress.total} mastered`);
-    els.progressFill.style.width = `${progress.percentage}%`;
+    const independentPercentage = progress.total ? progress.masteredIndependently / progress.total * 100 : 0;
+    const helpedPercentage = progress.total ? progress.masteredWithHelp / progress.total * 100 : 0;
+    els.progressFill.style.width = `${independentPercentage}%`;
+    els.progressFillHelped.style.width = `${helpedPercentage}%`;
+    els.progressTrack.setAttribute('aria-valuetext', `${progress.mastered} of ${progress.total} completed: ${progress.masteredIndependently} ok, ${progress.masteredWithHelp} with hint`);
     els.progressPercentage.textContent = `${progress.percentage}%`;
     els.questWorld.hidden = activeTheme !== 'quest';
     els.questWorld.style.setProperty('--quest-progress', `${progress.percentage}%`);
@@ -394,18 +447,47 @@
   }
   function renderQuestion() {
     if (!queue.length) { finish(); return; }
-    current = queue[0]; current.direction = directionFor(); evaluated = false;
+    current = queue[0]; current.direction = directionFor(); evaluated = false; nearRetryUsed = false;
+    oralAnswerRevealed = false;
+    els.practice.classList.toggle('oral-mode', oralPractice);
     els.feedback.hidden = true; els.lookupAnswer.hidden = true; els.hintDisplay.hidden = true;
+    els.feedbackTitle.hidden = false; els.feedbackDetail.hidden = false;
+    els.feedbackAnswer.hidden = false; els.feedbackAnswer.textContent = '';
     els.hintDisplay.className = 'hint-display'; els.hintText.textContent = ''; els.hintRating.textContent = '';
-    els.answer.value = ''; els.answer.disabled = false; els.checkButton.textContent = 'Check ↵';
+    els.answer.value = ''; els.answer.disabled = false; els.answer.hidden = oralPractice;
+    setExerciseAction(oralPractice ? 'Reveal answer' : 'Check answer');
     const list = workspace.lists.find(item => item.id === currentListId);
     const source = current.direction === 'key-value' ? current.pair.key : current.pair.value;
     const expected = current.direction === 'key-value' ? current.pair.value : current.pair.key;
     els.answer.placeholder = `Type ${current.direction === 'key-value' ? list.valueLabel : list.keyLabel}…`;
-    hintState = Practice.createHintState(expected);
+    hintState = oralPractice ? null : Practice.createHintState(expected);
     els.prompt.textContent = source;
     renderSessionProgress();
-    requestAnimationFrame(() => els.answer.focus());
+    requestAnimationFrame(() => oralPractice ? els.checkButton.focus() : els.answer.focus());
+  }
+  function oralAction() {
+    if (!oralPractice) return;
+    if (!oralAnswerRevealed) {
+      const expected = current.direction === 'key-value' ? current.pair.value : current.pair.key;
+      oralAnswerRevealed = true;
+      els.feedback.className = 'feedback correct';
+      els.feedback.hidden = false;
+      els.feedbackTitle.hidden = true;
+      els.feedbackTitle.textContent = '';
+      els.feedbackAnswer.hidden = false;
+      els.feedbackAnswer.textContent = expected;
+      els.feedbackDetail.hidden = true;
+      els.feedbackDetail.textContent = '';
+      els.feedbackMark.hidden = true;
+      els.lookupAnswer.hidden = true;
+      setExerciseAction(queue.length === 1 ? 'Finish oral practice' : 'Next card', queue.length === 1);
+      els.checkButton.focus();
+      return;
+    }
+    oralReviewed++;
+    queue.shift();
+    if (!queue.length) { renderSessionProgress(); finish(); return; }
+    renderQuestion();
   }
   function recordMistake(entry) {
     if (!els.collectMistakes.checked) return;
@@ -416,16 +498,39 @@
     if (evaluated) return;
     const expected = current.direction === 'key-value' ? current.pair.value : current.pair.key;
     const comparison = Practice.compareAnswers(els.answer.value, expected);
-    const result = Practice.applyHintCap(comparison, hintState.level);
-    const label = Practice.feedbackLabel(comparison, hintState.level);
-    const detail = Practice.feedbackDetail(comparison, hintState.level);
+    if (comparison === 'near' && !nearRetryUsed && hintState.level < 3) {
+      nearRetryUsed = true;
+      els.feedback.className = 'feedback near';
+      els.feedback.hidden = false;
+      els.feedbackTitle.textContent = Practice.feedbackLabel('near', hintState.level);
+      els.feedbackAnswer.textContent = '';
+      els.feedbackAnswer.hidden = true;
+      els.feedbackDetail.textContent = 'One more try. The correct answer stays hidden.';
+      els.feedbackMark.hidden = true;
+      els.lookupAnswer.hidden = true;
+      els.answer.value = '';
+      els.answer.disabled = false;
+      setExerciseAction('Try again');
+      els.answer.focus();
+      return;
+    }
+
+    let result = Practice.applyHintCap(comparison, hintState.level);
+    let feedbackComparison = comparison;
+    if (comparison === 'near' && nearRetryUsed) {
+      result = 'wrong';
+      feedbackComparison = 'wrong';
+    }
+    const mastered = Practice.isMasteredAnswer(feedbackComparison, hintState.level, allowHelpMastery);
+    const helpedMastery = mastered && hintState.level > 0;
+    const label = Practice.feedbackLabel(feedbackComparison, hintState.level);
     evaluated = true;
     els.feedback.className = `feedback ${result}`;
     if (result === 'correct' && hintState.level === 0) els.feedback.classList.add('is-reward');
     else if (result === 'wrong') els.feedback.classList.add('is-incorrect');
     els.feedback.hidden = false;
-    els.feedbackTitle.textContent = `${label} ↵`; els.feedbackAnswer.textContent = expected;
-    els.feedbackDetail.textContent = detail;
+    els.feedbackTitle.textContent = label; els.feedbackAnswer.hidden = false; els.feedbackAnswer.textContent = expected;
+    els.feedbackDetail.hidden = true; els.feedbackDetail.textContent = '';
     els.feedbackMark.hidden = result !== 'correct' || hintState.level > 0;
     els.lookupAnswer.href = `https://translate.google.com/?sl=auto&tl=en&text=${encodeURIComponent(expected)}&op=translate`;
     els.lookupAnswer.hidden = false;
@@ -433,18 +538,19 @@
       els.hintDisplay.className = `hint-display ${result}`; els.hintRating.textContent = label;
     } else els.hintDisplay.hidden = true;
 
-    if (result === 'correct') {
-      correct++;
+    if (mastered) {
+      if (helpedMastery) masteredWithHelp++;
       if (mistakePractice) Lists.removeMistake(workspace, currentListId, current.pair);
     } else {
       sessionMistakes++;
       recordMistake(current.pair);
     }
-    Practice.retainForRetry(queue, result);
+    Practice.retainForRetry(queue, result, mastered);
     if (mistakePractice) persist(); else savePracticeProgress();
     renderSessionProgress();
     els.answer.disabled = true;
-    els.checkButton.textContent = queue.length === 0 && result === 'correct' ? 'Finish ↵' : 'Continue ↵';
+    const isFinish = queue.length === 0 && mastered;
+    setExerciseAction(isFinish ? 'Finish practice' : 'Continue to next card', isFinish);
     els.checkButton.focus();
   }
   function advance() {
@@ -454,8 +560,31 @@
   function finish() {
     if (sessionFinished) return;
     sessionFinished = true;
+    if (oralPractice) {
+      els.completionStats.hidden = true;
+      els.completionEyebrow.textContent = 'ORAL PRACTICE COMPLETE';
+      els.completionTitle.textContent = `${oralReviewed} card${oralReviewed === 1 ? '' : 's'} reviewed`;
+      els.completionIntro.textContent = 'Every card was shown once.';
+      els.celebration.replaceChildren();
+      els.completionMistakesButton.disabled = false;
+      els.completionMistakesButton.hidden = false;
+      els.completionMistakesButton.textContent = 'Practice again';
+      els.completionMistakesButton.classList.add('primary');
+      els.completionMistakesButton.classList.remove('secondary');
+      els.completionBackButton.classList.remove('primary');
+      els.completionBackButton.classList.add('secondary');
+      show('completion');
+      return;
+    }
+    els.completionStats.hidden = false;
+    els.completionIntro.textContent = 'You reached the end of this practice queue.';
+    els.completionMistakesButton.hidden = false;
     if (!mistakePractice) savePracticeProgress(); else persist();
-    els.finalCorrect.textContent = String(sessionTotal); els.finalMistakes.textContent = String(sessionMistakes);
+    const summary = Practice.progressSummary(sessionTotal, queue, masteredWithHelp);
+    els.finalCorrect.textContent = String(summary.mastered);
+    els.finalIndependent.textContent = String(summary.masteredIndependently);
+    els.finalHelped.textContent = String(summary.masteredWithHelp);
+    els.finalMistakes.textContent = String(sessionMistakes);
     const theme = Themes.themes.find(item => item.id === activeTheme) || Themes.themes[0];
     els.completionTitle.textContent = theme.completionTitle;
     els.completionEyebrow.textContent = theme.completionEyebrow;
@@ -524,7 +653,7 @@
     workspace.mistakes[list.id] = []; persist(); renderSetup();
   });
   els.direction.addEventListener('change', renderProgressHint);
-  els.mode.addEventListener('change', renderProgressHint);
+  els.mode.addEventListener('change', () => { renderPracticeMode(); renderProgressHint(); });
   els.startButton.addEventListener('click', () => start(els.mode.value === 'full'));
   els.editorBackButton.addEventListener('click', leaveEditor);
   els.discardListButton.addEventListener('click', discardEditor);
@@ -537,8 +666,9 @@
     const name = els.editorName.value || draft.name;
     download(`${safeFilename(name)}.csv`, Lists.encodeCSV(draft.entries), 'text/csv;charset=utf-8');
   });
-  els.leaveButton.addEventListener('click', () => { savePracticeProgress(); renderSetup(); show('setup'); });
+  els.leaveButton.addEventListener('click', () => { if (!oralPractice) savePracticeProgress(); renderSetup(); show('setup'); });
   els.answer.addEventListener('keydown', event => {
+    if (oralPractice) return;
     if (!Practice.shouldRequestHint(event.key, els.answer.value, evaluated)) return;
     event.preventDefault(); Practice.nextHint(hintState);
     els.hintDisplay.hidden = false; els.hintDisplay.className = `hint-display ${hintState.rating}`;
@@ -547,10 +677,12 @@
   });
   els.answerForm.addEventListener('submit', event => {
     event.preventDefault();
+    if (oralPractice) { oralAction(); return; }
     if (Practice.enterAction(evaluated) === 'check') checkAnswer(); else advance();
   });
   els.completionBackButton.addEventListener('click', () => { renderSetup(); show('setup'); });
   els.completionMistakesButton.addEventListener('click', () => {
+    if (oralPractice) { start(true, false); return; }
     renderSetup(); setHomeView('review'); show('setup'); els.mistakesReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
   els.exportProgress.addEventListener('click', () => download('kivo-workspace-backup.json', JSON.stringify({ format: 'kivo-workspace-v1', workspace }, null, 2), 'application/json'));
@@ -589,6 +721,7 @@
 
   persist();
   renderSetup();
+  renderPracticeMode();
   renderThemePicker();
   window.Kivo = { ...Practice, ...Lists };
 })();

@@ -94,9 +94,11 @@ function createApp(workspace = seededWorkspace(), confirm = () => true) {
   for (const element of elements.values()) element.ownerDocument = document;
   for (const id of ['direction', 'mode']) {
     const select = elements.get(id);
-    const count = id === 'direction' ? 3 : 2;
+    const count = 3;
     for (let i = 0; i < count; i++) select.append(new FakeElement('option'));
   }
+  elements.get('direction').value = 'key-value';
+  elements.get('mode').value = 'full';
   const storage = new MemoryStorage({ [Lists.WORKSPACE_KEY]: JSON.stringify(workspace) });
   const confirmations = [];
   const window = {
@@ -135,6 +137,17 @@ test('standalone HTML loads its local theme module before app initialization', (
   const appScript = html.indexOf('src="app.js');
   assert.ok(themeScript >= 0 && appScript > themeScript);
   assert.doesNotMatch(html, /https?:\/\//);
+});
+
+test('practice progress uses the compact completed and status summary in responsive styling', () => {
+  assert.match(html, /> completed<\/span>/);
+  assert.match(html, /mastered-independent-count[^>]*>0<\/strong> ok/);
+  assert.match(html, /mastered-helped-count[^>]*>0<\/strong> hint/);
+  assert.match(html, /remaining-count[^>]*>0<\/strong> left/);
+  assert.match(html, /mistake-count[^>]*>0<\/strong> errors/);
+  assert.match(html, /aria-label="Entries completed"/);
+  assert.match(styleSource, /\.progress-meta-tail\s*\{[\s\S]*?white-space:\s*nowrap/);
+  assert.match(styleSource, /@media\(max-width:560px\)\s*\{\s*\.progress-meta\s*\{/);
 });
 
 test('celebration motion respects reduced-motion preferences', () => {
@@ -207,6 +220,275 @@ test('imports multiple CSV files as separate lists and reports individual failur
   assert.match(app.elements.get('list-status').textContent, /invalid\.csv/);
   assert.equal(input.value, '');
   assert.match(html, /id="csv-file"[^>]*\bmultiple(?:\s|>)/);
+});
+
+test('imports French and Dutch labeled CSV and retains its column names for practice', async () => {
+  const app = createApp();
+  const input = app.elements.get('csv-file');
+  input.files = [{ name: 'FR-01.csv', text: async () => '\uFEFFFrançais;Néerlandais\r\nbonjour;hallo' }];
+  await input.dispatch('change', { target: input });
+  const list = Lists.loadWorkspace(app.storage).lists.find(item => item.name === 'FR-01');
+  assert.ok(list);
+  assert.equal(list.keyLabel, 'Français');
+  assert.equal(list.valueLabel, 'Néerlandais');
+  assert.deepEqual(list.entries.map(({ key, value }) => ({ key, value })), [{ key: 'bonjour', value: 'hallo' }]);
+});
+
+test('near-match retry works in both directions across all themes without revealing the answer', async () => {
+  const themes = ['classic', 'arcade-86', 'maze', 'quest'];
+  for (let themeIndex = 0; themeIndex < themes.length; themeIndex++) {
+    for (const direction of ['key-value', 'value-key']) {
+      const workspace = Lists.createWorkspace();
+      const list = Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+      workspace.mistakes = {};
+      const app = createApp(workspace);
+      await app.elements.get('theme-picker').children[themeIndex].click();
+      app.elements.get('direction').value = direction;
+      app.elements.get('mode').value = 'full';
+      await app.elements.get('start-button').click();
+      assert.equal(app.document.documentElement.dataset.theme, themes[themeIndex]);
+      assert.equal(app.elements.get('quest-world').hidden, themes[themeIndex] !== 'quest');
+
+      app.elements.get('answer').value = direction === 'key-value' ? 'salutt' : 'bonjoue';
+      await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+      assert.match(app.elements.get('feedback-title').textContent, /try once more/i);
+      assert.equal(app.elements.get('feedback-answer').hidden, true);
+      assert.equal(app.elements.get('feedback-answer').textContent, '');
+      assert.equal(app.elements.get('answer').disabled, false);
+      assert.equal(app.elements.get('mistake-count').textContent, '0');
+      assert.equal(app.elements.get('correct-count').textContent, '0');
+
+      app.elements.get('answer').value = direction === 'key-value' ? 'salut' : 'bonjour';
+      await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+      assert.match(app.elements.get('feedback-title').textContent, /Correct!/);
+      assert.equal(app.elements.get('feedback-answer').textContent, direction === 'key-value' ? 'salut' : 'bonjour');
+      assert.equal(app.elements.get('mistake-count').textContent, '0');
+      assert.equal(app.elements.get('correct-count').textContent, '1');
+      await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+      assert.equal(app.elements.get('completion').hidden, false);
+      assert.equal(app.elements.get('final-correct').textContent, '1');
+      assert.equal(app.elements.get('final-mistakes').textContent, '0');
+      assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY) !== null, true);
+    }
+  }
+});
+
+test('failed second near-match records one mistake and retains one queue entry', async () => {
+  const workspace = Lists.createWorkspace();
+  const list = Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+  workspace.mistakes = {};
+  const app = createApp(workspace);
+  app.elements.get('collect-mistakes').checked = true;
+  app.elements.get('direction').value = 'value-key';
+  app.elements.get('mode').value = 'full';
+  await app.elements.get('start-button').click();
+
+  app.elements.get('answer').value = 'bonjoue';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  app.elements.get('answer').value = 'wrong';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+
+  assert.equal(app.elements.get('feedback-title').textContent, 'Incorrect');
+  assert.equal(app.elements.get('mistake-count').textContent, '1');
+  const saved = JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY));
+  assert.equal(saved.mistakes[list.id].length, 1);
+  assert.deepEqual(saved.progress[list.id]['value-key'].remaining, [list.entries[0].id]);
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  assert.equal(app.elements.get('prompt').textContent, 'salut');
+  assert.equal(app.elements.get('remaining-count').textContent, '1');
+});
+
+test('hint mastery stays strict by default and preserves retry feedback', async () => {
+  const workspace = Lists.createWorkspace();
+  const list = Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+  workspace.mistakes = {};
+  const app = createApp(workspace);
+  assert.equal(app.elements.get('hint-counts-as-mastered').checked, false);
+  app.elements.get('collect-mistakes').checked = true;
+  app.elements.get('direction').value = 'key-value';
+  await app.elements.get('start-button').click();
+  await app.elements.get('answer').dispatch('keydown', { key: ' ', preventDefault() {} });
+  app.elements.get('answer').value = 'salut';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+
+  assert.match(app.elements.get('feedback').className, /feedback near/);
+  assert.equal(app.elements.get('feedback-title').textContent, 'Correct — hint used');
+  assert.equal(app.elements.get('feedback-detail').hidden, true);
+  assert.equal(app.elements.get('feedback-detail').textContent, '');
+  assert.equal(app.elements.get('correct-count').textContent, '0');
+  assert.equal(app.elements.get('remaining-count').textContent, '1');
+  assert.equal(app.elements.get('mistake-count').textContent, '1');
+  assert.equal(app.elements.get('mastered-helped-count').textContent, '0');
+
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  app.elements.get('answer').value = 'salut';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  assert.equal(app.elements.get('final-correct').textContent, '1');
+  assert.equal(app.elements.get('final-independent').textContent, '1');
+  assert.equal(app.elements.get('final-helped').textContent, '0');
+  assert.equal(app.elements.get('final-mistakes').textContent, '1');
+  assert.equal(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).mistakes[list.id].length, 1);
+});
+
+test('enabled hint mastery is orange and works in both directions and all four themes', async () => {
+  const themes = ['classic', 'arcade-86', 'maze', 'quest'];
+  for (let themeIndex = 0; themeIndex < themes.length; themeIndex++) {
+    for (const direction of ['key-value', 'value-key']) {
+      const workspace = Lists.createWorkspace();
+      const list = Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+      workspace.mistakes = {};
+      const app = createApp(workspace);
+      await app.elements.get('theme-picker').children[themeIndex].click();
+      app.elements.get('direction').value = direction;
+      app.elements.get('hint-counts-as-mastered').checked = true;
+      await app.elements.get('start-button').click();
+      await app.elements.get('answer').dispatch('keydown', { key: ' ', preventDefault() {} });
+      app.elements.get('answer').value = direction === 'key-value' ? 'salut' : 'bonjour';
+      await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+
+      assert.match(app.elements.get('feedback').className, /feedback near/);
+      assert.equal(app.elements.get('feedback-title').textContent, 'Correct — hint used');
+      assert.equal(app.elements.get('feedback-detail').hidden, true);
+      assert.equal(app.elements.get('correct-count').textContent, '1');
+      assert.equal(app.elements.get('mastered-independent-count').textContent, '0');
+      assert.equal(app.elements.get('mastered-helped-count').textContent, '1');
+      assert.equal(app.elements.get('remaining-count').textContent, '0');
+      assert.equal(app.elements.get('progress-fill').style.width, '0%');
+      assert.equal(app.elements.get('progress-fill-helped').style.width, '100%');
+      assert.equal(app.elements.get('mistake-count').textContent, '0');
+
+      await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+      assert.equal(app.elements.get('final-correct').textContent, '1');
+      assert.equal(app.elements.get('final-independent').textContent, '0');
+      assert.equal(app.elements.get('final-helped').textContent, '1');
+      assert.equal(app.elements.get('final-mistakes').textContent, '0');
+      assert.equal(app.document.documentElement.dataset.theme, themes[themeIndex]);
+      assert.equal(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).mistakes[list.id], undefined);
+    }
+  }
+});
+
+test('earlier mistakes remain in the mistake tally when later mastered with help', async () => {
+  const workspace = Lists.createWorkspace();
+  const list = Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+  workspace.mistakes = {};
+  const app = createApp(workspace);
+  app.elements.get('collect-mistakes').checked = true;
+  app.elements.get('hint-counts-as-mastered').checked = true;
+  app.elements.get('direction').value = 'key-value';
+  await app.elements.get('start-button').click();
+
+  app.elements.get('answer').value = 'xyz';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  assert.equal(app.elements.get('mistake-count').textContent, '1');
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  await app.elements.get('answer').dispatch('keydown', { key: ' ', preventDefault() {} });
+  app.elements.get('answer').value = 'salut';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+
+  assert.equal(app.elements.get('correct-count').textContent, '1');
+  assert.equal(app.elements.get('mastered-independent-count').textContent, '0');
+  assert.equal(app.elements.get('mastered-helped-count').textContent, '1');
+  assert.equal(app.elements.get('mistake-count').textContent, '1');
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  assert.equal(app.elements.get('final-independent').textContent, '0');
+  assert.equal(app.elements.get('final-helped').textContent, '1');
+  assert.equal(app.elements.get('final-mistakes').textContent, '1');
+  assert.equal(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).mistakes[list.id].length, 1);
+});
+
+test('the third hint remains a red evaluated answer even when hint mastery is enabled', async () => {
+  const workspace = Lists.createWorkspace();
+  Lists.addList(workspace, 'French practice', [{ key: 'bonjour', value: 'salut' }]);
+  workspace.mistakes = {};
+  const app = createApp(workspace);
+  app.elements.get('hint-counts-as-mastered').checked = true;
+  app.elements.get('direction').value = 'key-value';
+  await app.elements.get('start-button').click();
+  for (let index = 0; index < 3; index++) await app.elements.get('answer').dispatch('keydown', { key: ' ', preventDefault() {} });
+  app.elements.get('answer').value = 'salut';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+
+  assert.match(app.elements.get('feedback').className, /feedback wrong/);
+  assert.equal(app.elements.get('feedback-title').textContent, 'Answer revealed');
+  assert.equal(app.elements.get('correct-count').textContent, '0');
+  assert.equal(app.elements.get('mastered-helped-count').textContent, '0');
+  assert.equal(app.elements.get('remaining-count').textContent, '1');
+  assert.equal(app.elements.get('mistake-count').textContent, '1');
+});
+
+test('oral practice reveals and advances once per Enter in both directions and every theme without changing progress', async () => {
+  const themes = ['classic', 'arcade-86', 'maze', 'quest'];
+  for (let themeIndex = 0; themeIndex < themes.length; themeIndex++) {
+    for (const direction of ['key-value', 'value-key']) {
+      const workspace = Lists.createWorkspace();
+      const list = Lists.addList(workspace, 'Oral cards', [
+        { key: 'cat', value: 'chat' }, { key: 'dog', value: 'chien' }
+      ]);
+      Lists.saveProgress(workspace, list.id, direction, [{ id: list.entries[0].id }]);
+      Lists.addMistake(workspace, list.id, list.entries[1]);
+      const app = createApp(workspace);
+      const before = app.storage.getItem(Lists.WORKSPACE_KEY);
+      await app.elements.get('theme-picker').children[themeIndex].click();
+      app.elements.get('direction').value = direction;
+      app.elements.get('mode').value = 'oral';
+      app.elements.get('collect-mistakes').checked = true;
+      app.elements.get('hint-counts-as-mastered').checked = true;
+      await app.elements.get('mode').dispatch('change');
+      assert.equal(app.elements.get('written-options').hidden, true);
+      assert.match(app.elements.get('start-button').textContent, /Start oral practice/);
+      await app.elements.get('start-button').click();
+
+      assert.equal(app.document.documentElement.dataset.theme, themes[themeIndex]);
+      assert.equal(app.document.activeElement, app.elements.get('check-button'));
+      assert.equal(app.elements.get('answer').hidden, true);
+      assert.equal(app.elements.get('oral-progress').hidden, false);
+      assert.equal(app.elements.get('mastery-heading').hidden, true);
+      assert.equal(app.elements.get('mastery-meta').hidden, true);
+      assert.equal(app.elements.get('mastery-progress-row').hidden, false);
+      assert.equal(app.elements.get('check-button').textContent, '↵');
+      assert.equal(app.elements.get('check-button').attributes['aria-label'], 'Reveal answer');
+      assert.equal(app.elements.get('progress-fill').style.width, '0%');
+      assert.equal(app.elements.get('progress-percentage').textContent, '0%');
+      const seen = new Set();
+      const expectedByPrompt = direction === 'key-value' ? { cat: 'chat', dog: 'chien' } : { chat: 'cat', chien: 'dog' };
+
+      for (let index = 0; index < 2; index++) {
+        const prompt = app.elements.get('prompt').textContent;
+        seen.add(prompt);
+        await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+        assert.equal(app.elements.get('feedback').className, 'feedback correct');
+        assert.equal(app.elements.get('feedback-title').hidden, true);
+        assert.equal(app.elements.get('feedback-detail').hidden, true);
+        assert.equal(app.elements.get('feedback-title').textContent, '');
+        assert.equal(app.elements.get('feedback-detail').textContent, '');
+        assert.equal(app.elements.get('feedback-answer').textContent, expectedByPrompt[prompt]);
+        assert.equal(app.elements.get('oral-reviewed-count').textContent, String(index));
+        assert.equal(app.elements.get('progress-fill').style.width, `${index * 50}%`);
+        assert.equal(app.elements.get('progress-percentage').textContent, `${index * 50}%`);
+        assert.equal(app.elements.get('check-button').textContent, index === 1 ? 'Finish' : '↵');
+        assert.equal(app.elements.get('check-button').attributes['aria-label'], index === 1 ? 'Finish oral practice' : 'Next card');
+        assert.equal(app.document.activeElement, app.elements.get('check-button'));
+        await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+        assert.equal(app.elements.get('oral-reviewed-count').textContent, String(index + 1));
+        assert.equal(app.elements.get('progress-percentage').textContent, `${(index + 1) * 50}%`);
+      }
+
+      assert.equal(seen.size, 2);
+      assert.equal(app.elements.get('completion').hidden, false);
+      assert.equal(app.elements.get('completion-title').textContent, '2 cards reviewed');
+      assert.equal(app.elements.get('completion-eyebrow').textContent, 'ORAL PRACTICE COMPLETE');
+      assert.equal(app.elements.get('completion-stats').hidden, true);
+      assert.equal(app.elements.get('completion-mistakes-button').textContent, 'Practice again');
+      assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY), before);
+
+      await app.elements.get('completion-mistakes-button').click();
+      assert.equal(app.elements.get('practice').hidden, false);
+      assert.equal(app.elements.get('oral-reviewed-count').textContent, '0');
+      assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY), before);
+    }
+  }
 });
 
 test('About theme cards apply and persist the selected theme without reloading', async () => {

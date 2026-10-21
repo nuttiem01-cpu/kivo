@@ -50,7 +50,7 @@ The repository keeps public, generic sample lists in `vocabulary/examples/`. The
 
 ## CSV format
 
-CSV files use UTF-8 and a `key,value` header. The headers describe the portable file format; in Kivo, you may show different labels such as “Term” and “Definition”. Fields containing commas, quotes or line breaks should be quoted. A quote inside a quoted field is doubled.
+CSV files use UTF-8 and a header row. Kivo reads comma, semicolon or tab separated files, including common labels such as `key,value`, `French,Dutch`, `Français,Néerlandais` and `term,definition`. For other two-column headings, Kivo uses the first column as the term and the second as its answer, keeping their names as display labels. You can change the labels in the list editor. Fields containing delimiters, quotes or line breaks should be quoted. A quote inside a quoted field is doubled. Exported files use the portable `key,value` header format.
 
 ```csv
 key,value
