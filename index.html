@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f2">
+  <title>Kivo — key-value practice</title>
+  <link rel="stylesheet" href="style.css?v=5">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Kivo home"><span class="brand-mark">K</span><span>Kivo</span></a>
+      <span class="tagline">A quiet place to practice</span>
+    </header>
+
+    <section id="setup" class="panel setup" aria-labelledby="setup-title">
+      <p class="eyebrow">KEY-VALUE PRACTICE</p>
+      <h1 id="setup-title">Make it stick.</h1>
+      <p class="intro">Choose a list, set your direction, and get straight to practice.</p>
+      <div class="field-group">
+        <label for="csv-file">Your vocabulary list</label>
+        <input id="csv-file" type="file" accept=".csv,text/csv">
+        <p id="file-status" class="hint" aria-live="polite">Choose a CSV file with <code>key,value</code> headers.</p>
+      </div>
+      <div class="form-grid">
+        <div class="field-group">
+          <label for="direction">Direction</label>
+          <select id="direction"><option value="key-value">Key → Value</option><option value="value-key">Value → Key</option><option value="mixed">Mixed</option></select>
+        </div>
+        <div class="field-group">
+          <label for="mode">Practice mode</label>
+          <select id="mode"><option value="full">Full — start fresh</option><option value="progressive">Progressive — continue</option></select>
+        </div>
+      </div>
+      <label class="check-row"><input id="collect-mistakes" type="checkbox"><span>Collect mistakes for export</span></label>
+      <div class="button-row"><button id="start-button" class="button primary" disabled>Start practice <span aria-hidden="true">↗</span></button></div>
+      <p id="progress-hint" class="hint"></p>
+      <div class="transfer-row"><button id="export-progress" class="text-button" type="button">Export progress</button><label class="text-button import-label" for="progress-file">Import progress</label><input id="progress-file" type="file" accept="application/json,.json" hidden><button id="reset-progress" class="text-button" type="button" disabled>Reset saved progress</button></div>
+      <p id="storage-note" class="storage-note" hidden>Browser storage is unavailable; progress will last only for this session. Export it to keep a copy.</p>
+    </section>
+
+    <section id="practice" class="panel practice" hidden aria-labelledby="prompt">
+      <div class="practice-top"><button id="leave-button" class="text-button" type="button">← Leave exercise</button><span id="list-label" class="list-label"></span></div>
+      <div class="stats" aria-label="Exercise progress"><div><span class="stat-number" id="remaining-count">0</span><span class="stat-label">remaining</span></div><div><span class="stat-number" id="correct-count">0</span><span class="stat-label">correct</span></div><div><span class="stat-number" id="mistake-count">0</span><span class="stat-label">mistakes</span></div></div>
+      <div class="question-card">
+        <h1 id="prompt" tabindex="-1"></h1>
+        <form id="answer-form" autocomplete="off">
+          <label class="sr-only" for="answer">Your answer</label>
+          <input id="answer" type="text" spellcheck="false" autocapitalize="off" placeholder="Type your answer…" aria-describedby="feedback-answer">
+          <button id="check-button" class="button primary" type="submit">Check <span aria-hidden="true">↵</span></button>
+        </form>
+        <div id="feedback" class="feedback" aria-live="polite" hidden><p id="feedback-title"></p><p id="feedback-answer"></p></div>
+        <div class="lookup-row"><a id="lookup-answer" class="lookup-link" href="#" target="_blank" rel="noopener noreferrer" aria-label="Look up answer in Google Translate" title="Look up answer in Google Translate" hidden>📖</a></div>
+      </div>
+    </section>
+
+    <section id="completion" class="panel completion" hidden aria-labelledby="completion-title">
+      <p class="eyebrow">EXERCISE COMPLETE</p><h1 id="completion-title">All clear.</h1>
+      <p class="intro">Every pair has been answered correctly.</p>
+      <div class="completion-stats"><div><strong id="final-correct">0</strong><span>correct answers</span></div><div><strong id="final-mistakes">0</strong><span>mistakes this session</span></div></div>
+      <div class="button-row"><button id="restart-button" class="button primary">Start again <span aria-hidden="true">↗</span></button><button id="setup-button" class="button secondary">Return to setup</button></div>
+      <div id="mistake-actions" class="mistake-actions" hidden><button id="export-mistakes" class="button secondary">Export mistakes.csv ↓</button><button id="clear-mistakes" class="text-button">Clear collected mistakes</button></div>
+    </section>
+  </main>
+  <script src="app.js?v=4"></script>
+</body>
+</html>
