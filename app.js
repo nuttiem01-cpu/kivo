@@ -4,25 +4,26 @@
   const $ = id => document.getElementById(id);
   const Lists = window.KivoLists;
   const Practice = window.KivoPractice;
+  const Themes = window.KivoThemes;
   const ids = [
-    'setup','editor','practice','completion','migration-note','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','manage-list-select','list-status','new-list-button','import-list-button','csv-file',
-    'selected-list','selected-name','entry-count','edit-list-button','duplicate-list-button','export-list-button','delete-list-button',
+    'setup','editor','practice','completion','completion-eyebrow','completion-title','celebration','theme-picker','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','list-status','new-list-button','import-list-button','csv-file','list-count','list-overview','delete-selected-lists','delete-all-lists',
     'mistakes-review','mistake-total','mistake-empty','mistake-key-heading','mistake-value-heading','mistake-rows','practice-mistakes-button','export-mistakes','clear-mistakes',
     'practice-options','direction','mode','collect-mistakes','start-button','progress-hint','export-progress','progress-file','reset-progress',
     'editor-back-button','editor-name','editor-key-label','editor-value-label','entry-search','add-entry-button','editor-count','editor-status',
     'editor-key-heading','editor-value-heading','editor-rows','save-list-button','discard-list-button','editor-export-button',
-    'leave-button','list-label','remaining-count','correct-count','mistake-count','session-total','progress-track','progress-fill','progress-percentage','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
+    'leave-button','list-label','quest-world','quest-score','quest-hero','quest-progress-label','remaining-count','correct-count','mistake-count','session-total','progress-track','progress-fill','progress-percentage','prompt','answer-form','answer','check-button','hint-display','hint-text','hint-rating',
     'feedback','feedback-title','feedback-mark','feedback-answer','feedback-detail','lookup-answer','final-correct','final-mistakes','completion-mistakes-button','completion-back-button'
   ];
   const els = Object.fromEntries(ids.map(id => [id.replace(/-([a-z])/g, (_, character) => character.toUpperCase()), $(id)]));
 
   let storage = null;
   try { storage = window.localStorage; storage.getItem(Lists.WORKSPACE_KEY); } catch { storage = null; }
+  let activeTheme = Themes.apply(Themes.read(storage));
   let workspace = Lists.loadWorkspace(storage);
-  let manageListId = workspace.activeListId || workspace.lists[0]?.id || null;
   let storageWorks = Boolean(storage);
   let queue = [], current = null, hintState = null, evaluated = false, correct = 0, sessionMistakes = 0, sessionTotal = 0;
   let currentListId = null, practiceDirection = 'key-value', mistakePractice = false;
+  let sessionFinished = false;
   let draft = null, editorDirty = false;
   let homeView = 'practice';
 
@@ -35,7 +36,6 @@
     return result;
   }
   function selectedList() { return workspace.lists.find(list => list.id === workspace.activeListId) || null; }
-  function managedList() { return workspace.lists.find(list => list.id === manageListId) || null; }
   function show(section) {
     els.setup.hidden = section !== 'setup';
     els.editor.hidden = section !== 'editor';
@@ -108,27 +108,70 @@
       row.append(key, value); els.mistakeRows.append(row);
     }
   }
+  function renderListOverview() {
+    els.listOverview.replaceChildren();
+    const count = workspace.lists.length;
+    els.listCount.textContent = `${count} list${count === 1 ? '' : 's'}`;
+    els.deleteAllLists.disabled = count === 0;
+    els.deleteSelectedLists.disabled = true;
+    if (!count) {
+      const empty = document.createElement('p');
+      empty.className = 'hint list-overview-empty'; empty.textContent = 'No lists yet. Create a list or import a CSV to get started.';
+      els.listOverview.append(empty);
+      return;
+    }
+    for (const list of workspace.lists) {
+      const row = document.createElement('article'); row.className = 'list-management-row';
+      const selection = document.createElement('label'); selection.className = 'list-selection';
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = list.id;
+      checkbox.setAttribute('aria-label', `Select ${list.name} for deletion`);
+      checkbox.addEventListener('change', updateBulkDeleteState);
+      selection.append(checkbox);
+      const description = document.createElement('span'); description.className = 'list-management-description';
+      const name = document.createElement('strong'); name.textContent = list.name;
+      const details = document.createElement('span'); details.className = 'hint';
+      details.textContent = `${list.entries.length} entr${list.entries.length === 1 ? 'y' : 'ies'} · ${list.keyLabel} / ${list.valueLabel}`;
+      description.append(name, details); selection.append(description); row.append(selection);
+      const actions = document.createElement('div'); actions.className = 'list-management-actions';
+      const addAction = (label, action, danger = false) => {
+        const button = document.createElement('button'); button.type = 'button';
+        button.className = danger ? 'text-button danger-text' : 'text-button'; button.textContent = label;
+        button.addEventListener('click', () => action(list)); actions.append(button);
+      };
+      addAction('Edit', item => openEditor(item.id));
+      addAction('Duplicate', item => {
+        const activeListId = workspace.activeListId;
+        const copy = Lists.duplicateList(workspace, item.id);
+        if (copy) {
+          workspace.activeListId = activeListId; persist(); renderSetup();
+          setListStatus(`Created “${copy.name}” as a separate list.`);
+        }
+      });
+      addAction('Export CSV', item => exportList(item));
+      addAction('Delete', item => {
+        if (!window.confirm(`Delete “${item.name}”, its progress and its collected mistakes from this browser?`)) return;
+        Lists.deleteList(workspace, item.id); persist(); renderSetup(); setListStatus(`Deleted “${item.name}”.`);
+      }, true);
+      row.append(actions); els.listOverview.append(row);
+    }
+  }
+  function updateBulkDeleteState() {
+    els.deleteSelectedLists.disabled = !els.listOverview.querySelector('input[type="checkbox"]:checked');
+  }
   function renderSetup() {
-    if (!workspace.lists.some(list => list.id === manageListId)) manageListId = workspace.lists[0]?.id || null;
-    for (const select of [els.listSelect, els.manageListSelect]) {
-      select.replaceChildren();
-      const placeholder = document.createElement('option');
-      placeholder.value = ''; placeholder.textContent = workspace.lists.length ? 'Choose a list' : 'No lists yet';
-      select.append(placeholder);
-      for (const list of workspace.lists) {
-        const option = document.createElement('option');
-        option.value = list.id; option.textContent = `${list.name} · ${list.entries.length}`; select.append(option);
-      }
+    els.listSelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = ''; placeholder.textContent = workspace.lists.length ? 'Choose a list' : 'No lists yet';
+    els.listSelect.append(placeholder);
+    for (const list of workspace.lists) {
+      const option = document.createElement('option');
+      option.value = list.id; option.textContent = `${list.name} · ${list.entries.length}`; els.listSelect.append(option);
     }
     els.listSelect.value = workspace.activeListId || '';
-    els.manageListSelect.value = manageListId || '';
-    const list = managedList();
-    els.selectedList.hidden = !list;
+    const list = selectedList();
     els.practiceOptions.hidden = !list;
     els.startButton.disabled = !list || !list.entries.length;
     if (list) {
-      els.selectedName.textContent = list.name;
-      els.entryCount.textContent = `${list.entries.length} entr${list.entries.length === 1 ? 'y' : 'ies'}`;
       els.direction.options[0].textContent = `${list.keyLabel} → ${list.valueLabel}`;
       els.direction.options[1].textContent = `${list.valueLabel} → ${list.keyLabel}`;
       els.direction.options[2].textContent = 'Mixed';
@@ -136,35 +179,63 @@
       els.editorValueHeading.textContent = list.valueLabel;
     }
     renderMistakes(list);
-    els.migrationNote.textContent = workspace.migrationNotice;
-    els.migrationNote.hidden = !workspace.migrationNotice;
+    renderListOverview();
     setHomeView(homeView);
     renderProgressHint();
+  }
+  function renderThemePicker() {
+    els.themePicker.replaceChildren();
+    for (const theme of Themes.themes) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'theme-card';
+      button.setAttribute('aria-pressed', String(theme.id === activeTheme));
+      button.setAttribute('aria-label', `${theme.name}: ${theme.description}`);
+      const swatches = document.createElement('span'); swatches.className = `theme-swatches theme-swatches-${theme.id}`; swatches.setAttribute('aria-hidden', 'true');
+      const name = document.createElement('strong'); name.textContent = theme.name;
+      const description = document.createElement('span'); description.className = 'hint'; description.textContent = theme.description;
+      button.append(swatches, name, description);
+      button.addEventListener('click', () => {
+        activeTheme = Themes.save(theme.id, storage);
+        Themes.apply(activeTheme);
+        for (const card of els.themePicker.children) card.setAttribute('aria-pressed', String(card === button));
+      });
+      els.themePicker.append(button);
+    }
   }
   function newList() {
     const practiceListId = workspace.activeListId;
     const list = Lists.addList(workspace, 'Untitled list');
     workspace.activeListId = practiceListId;
-    manageListId = list.id;
     persist(); renderSetup(); openEditor(list.id);
   }
   async function importCSV(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    try {
-      const parsed = Lists.parseCSV(await file.text());
-      if (!parsed.entries.length) throw new Error('This CSV has no entries.');
-      const practiceListId = workspace.activeListId;
-      const list = Lists.addList(workspace, fileBaseName(file.name), parsed.entries);
-      workspace.activeListId = practiceListId;
-      manageListId = list.id;
-      const migrated = Lists.migrateProgressForList(workspace, list);
-      persist(); renderSetup();
-      const duplicateNote = parsed.duplicateCount ? ` Skipped ${parsed.duplicateCount} duplicate pair${parsed.duplicateCount === 1 ? '' : 's'}.` : '';
-      const progressNote = migrated ? ` Restored saved progress for ${migrated} direction${migrated === 1 ? '' : 's'}.` : '';
-      setListStatus(`Imported as a separate list. Existing lists were kept.${duplicateNote}${progressNote}`);
-    } catch (error) {
-      setListStatus(`Could not import CSV: ${error.message}`, true);
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const practiceListId = workspace.activeListId;
+    const failures = [];
+    let imported = 0, skippedDuplicates = 0, restoredDirections = 0;
+    for (const file of files) {
+      try {
+        const parsed = Lists.parseCSV(await file.text());
+        if (!parsed.entries.length) throw new Error('This CSV has no entries.');
+        const list = Lists.addList(workspace, fileBaseName(file.name), parsed.entries);
+        workspace.activeListId = practiceListId;
+        imported++;
+        skippedDuplicates += parsed.duplicateCount;
+        restoredDirections += Lists.migrateProgressForList(workspace, list);
+      } catch (error) {
+        failures.push(`${file.name}: ${error.message}`);
+      }
+    }
+    workspace.activeListId = practiceListId;
+    if (imported) { persist(); renderSetup(); }
+    const duplicateNote = skippedDuplicates ? ` Skipped ${skippedDuplicates} duplicate pair${skippedDuplicates === 1 ? '' : 's'}.` : '';
+    const progressNote = restoredDirections ? ` Restored saved progress for ${restoredDirections} direction${restoredDirections === 1 ? '' : 's'}.` : '';
+    if (failures.length) {
+      const summary = imported ? `Imported ${imported} of ${files.length} CSV files.` : `Could not import ${files.length} CSV file${files.length === 1 ? '' : 's'}.`;
+      setListStatus(`${summary}${duplicateNote}${progressNote} ${failures.join('; ')}`, imported === 0);
+    } else {
+      setListStatus(`Imported ${imported} separate list${imported === 1 ? '' : 's'} from ${files.length} CSV file${files.length === 1 ? '' : 's'}.${duplicateNote}${progressNote}`);
     }
     event.target.value = '';
   }
@@ -174,11 +245,12 @@
   function openEditor(listId) {
     const list = workspace.lists.find(item => item.id === listId);
     if (!list) return;
-    manageListId = list.id;
     draft = editorSnapshot(list); editorDirty = false;
     els.editorName.value = draft.name;
     els.editorKeyLabel.value = draft.keyLabel;
     els.editorValueLabel.value = draft.valueLabel;
+    els.editorKeyHeading.textContent = draft.keyLabel;
+    els.editorValueHeading.textContent = draft.valueLabel;
     els.entrySearch.value = '';
     els.editorStatus.textContent = '';
     els.saveListButton.disabled = true;
@@ -289,6 +361,7 @@
     queue = shuffled(entries.map(entry => ({ id: entry.id, pair: { key: entry.key, value: entry.value } })));
     sessionTotal = queue.length;
     correct = 0; sessionMistakes = 0;
+    sessionFinished = false;
     if (!queue.length) {
       if (mistakesOnly) setListStatus('There are no collected mistakes for this list yet.');
       else finish();
@@ -313,6 +386,11 @@
     els.progressTrack.setAttribute('aria-valuetext', `${progress.mastered} of ${progress.total} mastered`);
     els.progressFill.style.width = `${progress.percentage}%`;
     els.progressPercentage.textContent = `${progress.percentage}%`;
+    els.questWorld.hidden = activeTheme !== 'quest';
+    els.questWorld.style.setProperty('--quest-progress', `${progress.percentage}%`);
+    els.questWorld.style.setProperty('--quest-hero-position', `${8 + progress.percentage * .82}%`);
+    els.questScore.textContent = String(progress.mastered);
+    els.questProgressLabel.textContent = `${progress.percentage}%`;
   }
   function renderQuestion() {
     if (!queue.length) { finish(); return; }
@@ -374,8 +452,31 @@
     renderQuestion();
   }
   function finish() {
+    if (sessionFinished) return;
+    sessionFinished = true;
     if (!mistakePractice) savePracticeProgress(); else persist();
-    els.finalCorrect.textContent = correct; els.finalMistakes.textContent = sessionMistakes;
+    els.finalCorrect.textContent = String(sessionTotal); els.finalMistakes.textContent = String(sessionMistakes);
+    const theme = Themes.themes.find(item => item.id === activeTheme) || Themes.themes[0];
+    els.completionTitle.textContent = theme.completionTitle;
+    els.completionEyebrow.textContent = theme.completionEyebrow;
+    els.celebration.replaceChildren();
+    if (sessionTotal > 0) {
+      for (let index = 0; index < 18; index++) {
+        const piece = document.createElement('span'); piece.className = 'celebration-piece';
+        piece.style.left = `${3 + Math.random() * 94}%`;
+        piece.style.animationDelay = `${Math.random() * 180}ms`;
+        piece.style.setProperty('--drift', `${Math.round((Math.random() - .5) * 110)}px`);
+        els.celebration.append(piece);
+      }
+      setTimeout(() => els.celebration.replaceChildren(), 2300);
+    }
+    const hasReviewMistakes = (workspace.mistakes[currentListId] || []).length > 0;
+    els.completionMistakesButton.disabled = !hasReviewMistakes;
+    els.completionMistakesButton.textContent = hasReviewMistakes ? 'Review mistakes' : 'No mistakes to review';
+    els.completionMistakesButton.classList.toggle('primary', hasReviewMistakes);
+    els.completionMistakesButton.classList.toggle('secondary', !hasReviewMistakes);
+    els.completionBackButton.classList.toggle('primary', !hasReviewMistakes);
+    els.completionBackButton.classList.toggle('secondary', hasReviewMistakes);
     show('completion');
   }
 
@@ -400,24 +501,20 @@
   els.listSelect.addEventListener('change', () => {
     workspace.activeListId = els.listSelect.value || null; persist(); renderSetup();
   });
-  els.manageListSelect.addEventListener('change', () => {
-    manageListId = els.manageListSelect.value || null; renderSetup();
-  });
   els.newListButton.addEventListener('click', newList);
   els.importListButton.addEventListener('click', () => els.csvFile.click());
   els.csvFile.addEventListener('change', importCSV);
-  els.editListButton.addEventListener('click', () => { const list = managedList(); if (list) openEditor(list.id); });
-  els.duplicateListButton.addEventListener('click', () => {
-    const practiceListId = workspace.activeListId;
-    const copy = Lists.duplicateList(workspace, manageListId);
-    if (copy) { workspace.activeListId = practiceListId; manageListId = copy.id; persist(); renderSetup(); setListStatus(`Created “${copy.name}” as a separate list.`); }
+  els.deleteSelectedLists.addEventListener('click', () => {
+    const ids = [...els.listOverview.querySelectorAll('input[type="checkbox"]:checked')].map(input => input.value);
+    if (!ids.length || !window.confirm(`Delete ${ids.length} selected list${ids.length === 1 ? '' : 's'}, including their progress and collected mistakes?`)) return;
+    const deleted = Lists.deleteLists(workspace, ids); persist(); renderSetup();
+    setListStatus(`Deleted ${deleted} selected list${deleted === 1 ? '' : 's'}.`);
   });
-  els.deleteListButton.addEventListener('click', () => {
-    const list = managedList();
-    if (!list || !window.confirm(`Delete “${list.name}”, its progress and its collected mistakes from this browser?`)) return;
-    Lists.deleteList(workspace, list.id); manageListId = workspace.activeListId || workspace.lists[0]?.id || null; persist(); renderSetup(); setListStatus(`Deleted “${list.name}”.`);
+  els.deleteAllLists.addEventListener('click', () => {
+    if (!workspace.lists.length || !window.confirm(`Delete all ${workspace.lists.length} lists, including all progress and collected mistakes?`)) return;
+    const deleted = Lists.deleteLists(workspace, workspace.lists.map(list => list.id));
+    persist(); renderSetup(); setListStatus(`Deleted all ${deleted} lists.`);
   });
-  els.exportListButton.addEventListener('click', () => { const list = managedList(); if (list) exportList(list); });
   els.practiceMistakesButton.addEventListener('click', () => start(true, true));
   els.exportMistakes.addEventListener('click', () => {
     const list = selectedList(); if (list) download(`${safeFilename(list.name)}-mistakes.csv`, Lists.encodeCSV(workspace.mistakes[list.id] || []), 'text/csv;charset=utf-8');
@@ -461,16 +558,28 @@
     const file = event.target.files[0]; if (!file) return;
     try {
       const data = JSON.parse(await file.text());
-      if (data.format === 'kivo-workspace-v1') {
-        const result = Lists.mergeBackup(workspace, data);
-        persist(); renderSetup(); setListStatus(`Imported ${result.listsAdded} separate list${result.listsAdded === 1 ? '' : 's'}. Existing lists were kept.`);
-      } else if (data.format === 'kivo-progress-v1') {
-        Lists.mergeLegacyProgress(workspace, data.progress);
-        workspace.migrationNotice = 'Imported earlier progress is preserved. Re-import a matching CSV to restore its saved queue.';
-        persist(); renderSetup(); setListStatus('Earlier progress saved. Import its matching CSV to restore a list queue.');
-      } else throw new Error('This is not a Kivo workspace or progress backup.');
+      const restored = Lists.restoreBackup(data);
+      if (!window.confirm('This will replace your current lists, progress and mistakes. Continue?')) return;
+      const previousWorkspace = workspace;
+      workspace = restored;
+      let saved;
+      try {
+        renderSetup();
+        saved = persist();
+      } catch (error) {
+        workspace = previousWorkspace;
+        renderSetup();
+        throw error;
+      }
+      if (saved) {
+        try {
+          storage.removeItem(Lists.LEGACY_PROGRESS_KEY);
+          storage.removeItem(Lists.LEGACY_MISTAKES_KEY);
+        } catch { /* The restored workspace remains usable for this session. */ }
+      }
+      setListStatus(saved ? 'Workspace restored.' : 'Workspace restored for this session; browser storage is unavailable.');
     } catch (error) { setListStatus(`Could not import backup: ${error.message}`, true); }
-    event.target.value = '';
+    finally { event.target.value = ''; }
   });
   els.resetProgress.addEventListener('click', () => {
     const list = selectedList(); if (!list) return;
@@ -480,5 +589,6 @@
 
   persist();
   renderSetup();
+  renderThemePicker();
   window.Kivo = { ...Practice, ...Lists };
 })();

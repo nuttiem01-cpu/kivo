@@ -78,6 +78,24 @@ test('duplicate and delete operations create separate list state without sharing
   assert.equal(workspace.mistakes[source.id], undefined);
 });
 
+test('bulk list deletion removes selected list data and keeps unselected lists intact', () => {
+  const makeId = idFactory(), workspace = Lists.createWorkspace();
+  const first = Lists.addList(workspace, 'First', [{ key: 'a', value: '1' }], makeId);
+  const second = Lists.addList(workspace, 'Second', [{ key: 'b', value: '2' }], makeId);
+  const keep = Lists.addList(workspace, 'Keep', [{ key: 'c', value: '3' }], makeId);
+  for (const list of [first, second, keep]) {
+    Lists.saveProgress(workspace, list.id, 'key-value', list.entries);
+    Lists.addMistake(workspace, list.id, list.entries[0], makeId);
+  }
+  assert.equal(Lists.deleteLists(workspace, [first.id, second.id, first.id]), 2);
+  assert.deepEqual(workspace.lists.map(list => list.id), [keep.id]);
+  assert.equal(workspace.progress[first.id], undefined);
+  assert.equal(workspace.mistakes[second.id], undefined);
+  assert.equal(Lists.progressQueue(workspace, keep, 'key-value').length, 1);
+  assert.equal(workspace.mistakes[keep.id].length, 1);
+  assert.equal(workspace.activeListId, keep.id);
+});
+
 test('legacy mistakes are recovered and legacy progress restores when its CSV is re-imported', () => {
   const makeId = idFactory();
   const entries = [{ key: 'one', value: 'un' }, { key: 'two', value: 'deux' }];
@@ -114,15 +132,29 @@ test('workspace save and load preserve multiple lists, progress, and mistake col
   assert.equal(restored.mistakes[second.id].length, 1);
 });
 
-test('workspace backups import as separate lists without overwriting existing lists', () => {
-  const makeId = idFactory(), workspace = Lists.createWorkspace();
-  const original = Lists.addList(workspace, 'Shared name', [{ key: 'a', value: '1' }], makeId);
-  const backup = JSON.parse(JSON.stringify({ format: 'kivo-workspace-v1', workspace }));
-  const result = Lists.mergeBackup(workspace, backup, makeId);
-  assert.equal(result.listsAdded, 1);
-  assert.equal(workspace.lists.length, 2);
-  assert.notEqual(workspace.lists[0].id, workspace.lists[1].id);
-  assert.match(workspace.lists[1].name, /imported/);
+test('restoring a workspace backup replaces all state and preserves IDs and saved progress', () => {
+  const makeId = idFactory(), current = Lists.createWorkspace();
+  const oldList = Lists.addList(current, 'Old list', [{ key: 'old', value: 'old value' }], makeId);
+  Lists.addMistake(current, oldList.id, oldList.entries[0], makeId);
+
+  const source = Lists.createWorkspace();
+  const first = Lists.addList(source, 'Restored A', [{ key: 'one', value: 'un' }, { key: 'two', value: 'deux' }], makeId);
+  const second = Lists.addList(source, 'Restored B', [{ key: 'three', value: 'trois' }], makeId);
+  source.activeListId = first.id;
+  Lists.saveProgress(source, first.id, 'key-value', [{ id: first.entries[1].id }]);
+  Lists.saveProgress(source, second.id, 'mixed', []);
+  Lists.addMistake(source, first.id, first.entries[0], makeId);
+  const backup = JSON.parse(JSON.stringify({ format: 'kivo-workspace-v1', workspace: source }));
+
+  const restored = Lists.restoreBackup(backup, makeId);
+  assert.deepEqual(restored.lists.map(list => [list.id, list.name]), [[first.id, 'Restored A'], [second.id, 'Restored B']]);
+  assert.equal(restored.activeListId, first.id);
+  assert.deepEqual(Lists.progressQueue(restored, restored.lists[0], 'key-value').map(entry => entry.id), [first.entries[1].id]);
+  assert.deepEqual(Lists.progressQueue(restored, restored.lists[1], 'mixed'), []);
+  assert.equal(restored.mistakes[first.id][0].id, source.mistakes[first.id][0].id);
+  assert.equal(restored.lists.some(list => list.id === oldList.id), false);
+  assert.equal(restored.progress[oldList.id], undefined);
+  assert.throws(() => Lists.restoreBackup({ format: 'kivo-workspace-v1', workspace: { version: 1, lists: [{ id: 'bad', name: 'Bad', entries: [{ key: 'a', value: 'b' }] }] } }), /entry without an ID/);
 });
 
 test('file:// app assumptions use relative classic scripts and no network file loading', () => {
@@ -134,4 +166,12 @@ test('file:// app assumptions use relative classic scripts and no network file l
   assert.doesNotMatch(html, /type="module"|https?:\/\/.*\.js/);
   assert.doesNotMatch(app, /\bfetch\s*\(/);
   assert.match(html, /type="file" accept="\.csv,text\/csv"/);
+  assert.match(html, />Download backup</);
+  assert.match(html, />Restore backup</);
+  assert.match(app, /This will replace your current lists, progress and mistakes/);
+  const idsBlock = app.match(/const ids = \[([\s\S]*?)\];/)[1];
+  const appIds = [...idsBlock.matchAll(/'([^']+)'/g)].map(([, id]) => id);
+  const htmlIds = [...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id);
+  assert.equal(new Set(htmlIds).size, htmlIds.length, 'HTML IDs should be unique');
+  assert.deepEqual(appIds.filter(id => !htmlIds.includes(id)), [], 'every app control should exist in the standalone HTML');
 });

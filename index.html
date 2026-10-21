@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f6f2">
   <title>Kivo — practice with your lists</title>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <main class="shell">
@@ -21,8 +21,6 @@
         <button id="tab-review" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-review" tabindex="-1" data-home-tab="review">Review &amp; backup</button>
         <button id="tab-about" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-about" tabindex="-1" data-home-tab="about">About</button>
       </nav>
-      <p id="list-status" class="home-status hint" aria-live="polite" hidden></p>
-
       <section id="home-view-practice" class="home-view" role="tabpanel" aria-labelledby="tab-practice" tabindex="0">
         <p class="eyebrow">PRACTICE</p>
         <h1 id="setup-title">Let's practice.</h1>
@@ -30,7 +28,7 @@
           <div class="list-picker field-group">
             <label for="list-select">Choose a list</label>
             <select id="list-select" aria-describedby="list-helper list-status"><option value="">No lists yet</option></select>
-            <p id="list-helper" class="hint">Choose a list for this session.</p>
+            <p id="list-helper" class="hint">Choose a list for this session. To use an example, first import its CSV from Manage lists.</p>
           </div>
           <div id="practice-options" class="practice-options" hidden>
             <div class="form-grid">
@@ -53,27 +51,20 @@
       <section id="home-view-manage" class="home-view" role="tabpanel" aria-labelledby="tab-manage" tabindex="0" hidden>
         <p class="eyebrow">LISTS</p>
         <h1>Manage lists.</h1>
-        <div class="list-picker field-group manage-list-picker">
-          <label for="manage-list-select">Choose a list to manage</label>
-          <select id="manage-list-select" aria-describedby="manage-list-helper"><option value="">No lists yet</option></select>
-          <p id="manage-list-helper" class="hint">This selection is separate from the list chosen for practice.</p>
-        </div>
         <div class="manage-actions button-row">
           <button id="new-list-button" class="button primary" type="button">New list <span aria-hidden="true">＋</span></button>
           <button id="import-list-button" class="button secondary" type="button">Import CSV</button>
-          <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+          <input id="csv-file" type="file" accept=".csv,text/csv" multiple hidden>
         </div>
-        <p class="hint manage-hint">Lists and edits stay in this browser. Export a CSV to save a copy to your project folder.</p>
-        <div id="selected-list" class="selected-list" hidden>
-          <div class="selected-list-heading">
-            <div><h2 id="selected-name"></h2><p id="entry-count" class="hint"></p></div>
-            <button id="edit-list-button" class="text-button" type="button">Edit list</button>
-          </div>
-          <div class="transfer-row list-actions">
-            <button id="duplicate-list-button" class="text-button" type="button">Duplicate</button>
-            <button id="export-list-button" class="text-button" type="button">Export CSV</button>
-            <button id="delete-list-button" class="text-button danger-text" type="button">Delete</button>
-          </div>
+        <p id="list-status" class="home-status hint" aria-live="polite" hidden></p>
+        <p class="hint manage-hint">Import example CSVs from <code>vocabulary/examples/</code>. Lists stay in this browser; export a CSV to save a copy.</p>
+        <div class="list-overview-heading">
+          <h2>Your lists</h2><span id="list-count" class="hint"></span>
+        </div>
+        <div id="list-overview" class="list-overview" aria-live="polite"></div>
+        <div class="list-bulk-actions">
+          <button id="delete-selected-lists" class="text-button danger-text" type="button" disabled>Delete selected</button>
+          <button id="delete-all-lists" class="text-button danger-text" type="button" disabled>Delete all</button>
         </div>
       </section>
 
@@ -95,12 +86,12 @@
             <h2>Workspace backup</h2>
             <p class="hint">Keep a portable copy of your lists, progress and collected mistakes.</p>
             <div class="transfer-row backup-actions">
-              <button id="export-progress" class="text-button" type="button">Export backup</button>
-              <label class="text-button import-label" for="progress-file">Import backup</label>
+              <button id="export-progress" class="text-button" type="button">Download backup</button>
+              <label class="text-button import-label" for="progress-file">Restore backup</label>
               <input id="progress-file" type="file" accept="application/json,.json" hidden>
               <button id="reset-progress" class="text-button" type="button" disabled>Reset this direction's progress</button>
             </div>
-            <p class="hint data-note">Edits stay in this browser. CSV files are not changed automatically.</p>
+            <p class="hint data-note">Restore replaces all current lists, progress and mistakes after confirmation. Edits stay in this browser; CSV files are not changed automatically.</p>
           </div>
         </div>
       </section>
@@ -116,10 +107,14 @@
         </ul>
         <p>Open <code>index.html</code> directly to use Kivo offline. Lists and progress stay in this browser; use CSV or a workspace backup to move a copy. There is no account or cloud sync.</p>
         <p class="hint">The optional book link opens Google Translate and sends the answer when clicked.</p>
+        <section class="appearance-section" aria-labelledby="appearance-title">
+          <h2 id="appearance-title">Appearance</h2>
+          <p class="hint">Choose a style for Kivo.</p>
+          <div id="theme-picker" class="theme-picker" role="group" aria-label="Choose a theme"></div>
+        </section>
       </section>
 
       <div class="home-disclaimers">
-        <p id="migration-note" class="home-disclaimer" hidden></p>
         <p id="storage-note" class="home-disclaimer" hidden>Browser storage is unavailable. Changes will last only for this session; export your lists to keep a copy.</p>
       </div>
     </section>
@@ -154,6 +149,18 @@
 
     <section id="practice" class="panel practice" hidden aria-labelledby="prompt">
       <div class="practice-top"><button id="leave-button" class="text-button" type="button">← Leave exercise</button><span id="list-label" class="list-label"></span></div>
+      <section id="quest-world" class="quest-world" aria-label="Adventure map" hidden>
+        <div class="quest-hud"><span>WORLD 1-1</span><span><b id="quest-score">0</b> WORDS</span></div>
+        <div class="quest-landscape" role="img" aria-label="A path through green hills toward a castle">
+          <span class="quest-sun" aria-hidden="true"></span><span class="quest-cloud quest-cloud-one" aria-hidden="true"></span><span class="quest-cloud quest-cloud-two" aria-hidden="true"></span>
+          <span class="quest-mountain" aria-hidden="true"></span><span class="quest-hill quest-hill-back" aria-hidden="true"></span><span class="quest-hill quest-hill-front" aria-hidden="true"></span>
+          <span class="quest-tree quest-tree-one" aria-hidden="true">♣</span><span class="quest-tree quest-tree-two" aria-hidden="true">♣</span>
+          <span class="quest-path" aria-hidden="true"></span><span class="quest-waypoint quest-waypoint-start" aria-hidden="true">●</span><span class="quest-waypoint quest-waypoint-end" aria-hidden="true">◆</span>
+          <span id="quest-hero" class="quest-hero" aria-hidden="true"><svg viewBox="0 0 24 28"><path fill="#253c2b" d="M4 4h16v4H4zM2 8h20v4H2z"/><path fill="#f2bf83" d="M6 8h12v8H6z"/><path fill="#4b79c8" d="M4 16h16v8H4zM2 20h20v4H2z"/><path fill="#f4d24e" d="M8 12h2v2H8zM15 12h2v2h-2z"/><path fill="#e3b547" d="M7 24h4v3H7zM15 24h4v3h-4z"/></svg></span>
+          <span class="quest-destination" aria-hidden="true"></span>
+        </div>
+        <div class="quest-map-footer"><span>TRAVEL PROGRESS</span><span><b id="quest-progress-label">0%</b></span></div>
+      </section>
       <div class="session-progress" aria-label="Session progress">
         <div class="progress-heading"><p class="progress-primary"><strong id="correct-count">0</strong><span aria-hidden="true"> / </span><span id="session-total">0</span><span> mastered</span></p><span id="feedback-mark" class="feedback-mark" aria-hidden="true" hidden>✓</span></div>
         <div class="progress-bar-row"><div id="progress-track" class="progress-track" role="progressbar" aria-label="Entries mastered" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0 of 0 mastered"><span id="progress-fill" class="progress-fill"></span></div><span id="progress-percentage" class="progress-percentage">0%</span></div>
@@ -173,14 +180,17 @@
     </section>
 
     <section id="completion" class="panel completion" hidden aria-labelledby="completion-title">
-      <p class="eyebrow">SESSION COMPLETE</p><h1 id="completion-title">Nice work.</h1>
+      <div class="celebration" id="celebration" aria-hidden="true"></div>
+      <div class="quest-finish" aria-hidden="true"><span class="quest-finish-castle"></span><span class="quest-finish-hero"></span><span class="quest-finish-chest"></span></div>
+      <p id="completion-eyebrow" class="eyebrow">SESSION COMPLETE</p><h1 id="completion-title">Nice work.</h1>
       <p class="intro">You reached the end of this practice queue.</p>
-      <div class="completion-stats"><div><strong id="final-correct">0</strong><span>correct answers</span></div><div><strong id="final-mistakes">0</strong><span>mistakes this session</span></div></div>
+      <div class="completion-stats"><div><strong id="final-correct">0</strong><span>entries mastered</span></div><div><strong id="final-mistakes">0</strong><span>mistakes along the way</span></div></div>
       <div class="button-row"><button id="completion-mistakes-button" class="button primary" type="button">Review mistakes</button><button id="completion-back-button" class="button secondary" type="button">Return to lists</button></div>
     </section>
   </main>
   <script src="list-manager.js?v=2"></script>
   <script src="practice-helpers.js?v=3"></script>
-  <script src="app.js?v=11"></script>
+  <script src="themes.js?v=2"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

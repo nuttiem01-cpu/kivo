@@ -11,22 +11,34 @@ Kivo is a small vocabulary and concept practice app. It helps you recall a paire
 - Practice either direction or mix directions, with full and progressive modes.
 - Request up to three progressive hints with Space while the answer field is empty.
 - Review collected mistakes in the app, practice them again, or export them as CSV.
-- Save lists, per-list progress and mistakes in browser storage. Export a workspace backup when you want a portable copy.
+- Choose between Classic, Arcade '86, Maze and the illustrated Quest adventure theme.
+- Save lists, per-list progress and mistakes in browser storage. Download a workspace backup when you want a portable copy.
 
 ## Quick start
 
 1. On GitHub, choose **Code → Download ZIP** and extract the archive into a folder.
 2. Open `index.html` in a current browser.
-3. Choose **New list** to make a list, or **Import CSV** to load one. Public examples are in `vocabulary/examples/`; select any CSV with the file picker.
+3. Choose **New list** to make a list, or **Import CSV** to load one or more files at once. Each CSV becomes a separate list. Public examples are in `vocabulary/examples/`; select files with the file picker.
 4. Select a list, choose a direction and practice mode, then start.
 
 Kivo uses relative, classic JavaScript files and does not need a build step, package manager, local server or internet connection for its core features.
+
+Choose the visual style in **About → Appearance**:
+
+- **Classic** — Calm and focused
+- **Arcade '86** — Retro game energy
+- **Maze** — Chase your next word
+- **Quest** — Travel through a word adventure
+
+Your choice is saved as a separate browser preference and does not change lists or learning progress.
+
+All four styles keep the same lists, practice rules and controls. Maze adds a blue maze frame and yellow dotted progress display. Quest gives the practice screen an illustrated landscape, a traveling pixel adventurer and a mission finishline. All styles use the same slightly enlarged text scale.
 
 ## Create and manage lists
 
 Choose **New list** to open the editor. Add rows, enter a list name and optionally change the two display labels. Search filters the visible rows. **Save changes** stores your edits in this browser. **Discard changes** asks before dropping unsaved edits; leaving the editor also asks whether to save or stay.
 
-Select an existing list to edit it, duplicate it, export it as CSV or delete it. Deleting a list also deletes that list's browser-stored progress and collected mistakes. Importing a CSV always creates a separate list and keeps existing lists unchanged. If a list name is already in use, Kivo adds a number to the imported or duplicated name.
+The **Manage lists** tab shows every list with direct Edit, Duplicate, Export CSV and Delete actions. Select checkboxes to delete several lists, or choose **Delete all**. Deleting lists also deletes their browser-stored progress and collected mistakes. Importing one or more CSV files creates a separate list for each valid file and keeps existing lists unchanged. If a list name is already in use, Kivo adds a number to the imported or duplicated name. If a selected file is invalid, Kivo reports it and continues importing the other selected files.
 
 An imported CSV remains unchanged. Lists and edits made in Kivo are local browser working copies. **Export CSV** downloads a portable copy; to update a repository CSV, replace that file yourself and commit it with Git. Kivo cannot write edits back into the extracted project folder.
 
@@ -61,7 +73,7 @@ Progress is kept independently for each list and direction. Mixed practice has i
 
 ## Storage, backup and migration
 
-Kivo stores its local workspace, including lists, progress and mistakes, in `localStorage`. Nothing syncs automatically between browsers or devices. Use **Export workspace backup** for a JSON backup, or export individual lists as CSV. Importing a workspace backup adds separate copies of its lists instead of replacing your current lists.
+Kivo stores its local workspace, including lists, progress and mistakes, in `localStorage`. Nothing syncs automatically between browsers or devices. Choose **Download backup** to save one JSON file containing the complete workspace. **Restore backup** replaces the current lists, progress and mistakes with the contents of that file, after a confirmation. Restore keeps the backed-up list and entry IDs so saved progress remains attached to the correct entries. Use CSV export when you want to move or version individual lists. A merge or add-from-backup workflow is not currently provided.
 
 Earlier Kivo versions stored progress by CSV fingerprint and kept one global mistake collection. On first launch after upgrading, the old keys are retained. Collected mistakes are copied to a local list named **Recovered mistakes**. Previous progress is retained and can be restored for a list by importing the same CSV again; the old format did not contain the list entries themselves. You may delete the recovered list after reviewing it.
 
@@ -75,14 +87,15 @@ After feedback, the optional book icon opens Google Translate in a new tab. This
 
 ## Browser compatibility
 
-Kivo uses standard HTML, CSS and browser JavaScript, including `File.text()`, `localStorage`, `Blob` downloads and `crypto.randomUUID()` when available (with a local ID fallback). The automated checks run under Node.js; they do not verify browser-specific `file://` storage behavior. Use an up-to-date browser with JavaScript enabled. The availability and persistence of `localStorage` for local files varies between browsers and profiles.
+Kivo uses standard HTML, CSS and browser JavaScript, including `File.text()`, `localStorage`, `Blob` downloads and `crypto.randomUUID()` when available (with a local ID fallback). The app was opened directly through `file://` and visually checked in Google Chrome 155 on desktop and a narrow mobile viewport. Automated checks run under Node.js. Local file storage availability and persistence still vary between browsers and profiles, so export a CSV or workspace backup for a portable copy.
 
 ## Project structure
 
 ```text
 index.html                 App screens and controls
-style.css                  Visual design and responsive layout
+style.css                  Responsive layout and theme styles
 app.js                     Browser UI and practice flow
+themes.js                  Theme definitions and saved preference
 list-manager.js            CSV, lists, migration and workspace storage
 practice-helpers.js        Hint, rating and queue helpers
 *.test.js                  Dependency-free Node.js tests
@@ -97,7 +110,10 @@ There is no build or install step. With Node.js installed, run:
 ```sh
 node list-manager.test.js
 node practice-helpers.test.js
+node app-integration.test.js
+node themes.test.js
 node --check app.js
+node --check themes.js
 node --check list-manager.js
 node --check practice-helpers.js
 node --check list-manager.test.js

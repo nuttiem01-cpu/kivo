@@ -111,6 +111,13 @@
     return workspace.lists.length !== length;
   }
 
+  function deleteLists(workspace, listIds) {
+    const ids = new Set(listIds);
+    let deleted = 0;
+    for (const id of ids) if (deleteList(workspace, id)) deleted++;
+    return deleted;
+  }
+
   function parseCSV(text, idFactory = createId) {
     const rows = [];
     let row = [], field = '', quoted = false;
@@ -269,26 +276,64 @@
     return saved.remaining.map(id => byId.get(id)).filter(Boolean);
   }
 
-  function mergeBackup(workspace, data, idFactory = createId) {
-    if (data?.format !== 'kivo-workspace-v1' || !data.workspace || !Array.isArray(data.workspace.lists)) throw new Error('This is not a Kivo workspace backup.');
-    const imported = data.workspace;
-    const idMap = new Map();
-    for (const source of imported.lists) {
-      const sourceEntries = source.entries || [];
-      const list = addList(workspace, `${source.name} (imported)`, sourceEntries.map(({ key, value }) => ({ key, value })), idFactory, {
-        keyLabel: source.keyLabel,
-        valueLabel: source.valueLabel
-      });
-      idMap.set(source.id, list.id);
-      const entryMap = new Map(sourceEntries.map((entry, index) => [entry.id, list.entries[index]?.id]).filter(([, id]) => id));
-      const oldProgress = imported.progress?.[source.id] || {};
-      for (const [direction, saved] of Object.entries(oldProgress)) {
-        const remaining = (saved.remaining || []).map(id => entryMap.get(id)).filter(Boolean);
-        saveProgress(workspace, list.id, direction, remaining.map(id => ({ id })));
-      }
-      for (const mistake of imported.mistakes?.[source.id] || []) addMistake(workspace, list.id, mistake, idFactory);
+  function restoreBackup(data, idFactory = createId) {
+    if (data?.format !== 'kivo-workspace-v1' || data.workspace?.version !== 1 || !Array.isArray(data.workspace.lists)) {
+      throw new Error('This is not a supported Kivo workspace backup.');
     }
-    return { listsAdded: idMap.size };
+    const source = data.workspace;
+    const restored = createWorkspace();
+    const listIds = new Set();
+    for (const sourceList of source.lists) {
+      if (!sourceList || typeof sourceList.id !== 'string' || !sourceList.id || listIds.has(sourceList.id)) {
+        throw new Error('The backup contains a missing or duplicate list ID.');
+      }
+      if (!Array.isArray(sourceList.entries)) throw new Error(`The list “${sourceList.name || 'Untitled list'}” has invalid entries.`);
+      if (sourceList.entries.some(entry => !entry || typeof entry.id !== 'string' || !entry.id)) {
+        throw new Error(`The list “${sourceList.name || 'Untitled list'}” contains an entry without an ID.`);
+      }
+      const list = makeList(sourceList.name, sourceList.entries, idFactory, {
+        id: sourceList.id,
+        keyLabel: sourceList.keyLabel,
+        valueLabel: sourceList.valueLabel
+      });
+      const entryIds = new Set();
+      for (const entry of list.entries) {
+        if (!entry.id || entryIds.has(entry.id)) throw new Error(`The list “${list.name}” contains a missing or duplicate entry ID.`);
+        entryIds.add(entry.id);
+      }
+      const entriesError = validateEntries(list.entries);
+      if (entriesError) throw new Error(`The list “${list.name}” is invalid: ${entriesError}`);
+      listIds.add(list.id);
+      restored.lists.push(list);
+    }
+
+    restored.activeListId = listIds.has(source.activeListId) ? source.activeListId : restored.lists[0]?.id || null;
+    restored.legacyProgress = source.legacyProgress && typeof source.legacyProgress === 'object' && !Array.isArray(source.legacyProgress)
+      ? { ...source.legacyProgress } : {};
+    restored.migrationNotice = typeof source.migrationNotice === 'string' ? source.migrationNotice : '';
+
+    for (const list of restored.lists) {
+      const entryIds = new Set(list.entries.map(entry => entry.id));
+      const savedDirections = source.progress?.[list.id];
+      if (savedDirections && typeof savedDirections === 'object' && !Array.isArray(savedDirections)) {
+        for (const [direction, saved] of Object.entries(savedDirections)) {
+          if (!DIRECTIONS.includes(direction) || !Array.isArray(saved?.remaining)) continue;
+          const remaining = [...new Set(saved.remaining.filter(id => entryIds.has(id)))];
+          saveProgress(restored, list.id, direction, remaining.map(id => ({ id })));
+        }
+      }
+      const mistakes = source.mistakes?.[list.id];
+      if (Array.isArray(mistakes)) {
+        restored.mistakes[list.id] = [];
+        for (const mistake of mistakes) {
+          if (!mistake || !String(mistake.key ?? '').trim() || !String(mistake.value ?? '').trim()) continue;
+          if (!restored.mistakes[list.id].some(item => pairSignature(item.key, item.value) === pairSignature(mistake.key, mistake.value))) {
+            restored.mistakes[list.id].push(makeEntry(mistake, idFactory));
+          }
+        }
+      }
+    }
+    return restored;
   }
 
   function mergeLegacyProgress(workspace, progress) {
@@ -299,9 +344,9 @@
   const api = {
     WORKSPACE_KEY, LEGACY_PROGRESS_KEY, LEGACY_MISTAKES_KEY,
     createId, createWorkspace, makeList, makeEntry, uniqueName, validateEntries, setListDraft,
-    addList, duplicateList, deleteList, deleteEntry, pairSignature, parseCSV, encodeCSV, hash, legacyFingerprint,
+    addList, duplicateList, deleteList, deleteLists, deleteEntry, pairSignature, parseCSV, encodeCSV, hash, legacyFingerprint,
     migrateProgressForList, loadWorkspace, saveWorkspace, addMistake, removeMistake,
-    saveProgress, progressQueue, mergeBackup, mergeLegacyProgress
+    saveProgress, progressQueue, restoreBackup, mergeLegacyProgress
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') window.KivoLists = api;
