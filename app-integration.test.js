@@ -8,6 +8,8 @@ const Practice = require('./practice-helpers.js');
 const html = fs.readFileSync('index.html', 'utf8');
 const appSource = fs.readFileSync('app.js', 'utf8');
 const themeSource = fs.readFileSync('themes.js', 'utf8');
+const pomodoroSource = fs.readFileSync('pomodoro.js', 'utf8');
+const activitySource = fs.readFileSync('activity-tracker.js', 'utf8');
 const styleSource = fs.readFileSync('style.css', 'utf8');
 
 class FakeElement {
@@ -36,6 +38,7 @@ class FakeElement {
   click() { return this.dispatch('click'); }
   focus() { this.ownerDocument.activeElement = this; }
   setAttribute(name, value) { this.attributes[name] = String(value); }
+  closest(selector) { return selector === '[data-home-tab]' && this.dataset.homeTab ? this : null; }
   querySelectorAll(selector) {
     const all = [];
     const visit = element => {
@@ -83,6 +86,11 @@ function createApp(workspace = seededWorkspace(), confirm = () => true) {
   const elements = new Map(ids.map(id => [id, new FakeElement(id === 'list-select' || id === 'direction' || id === 'mode' ? 'select' : 'div', id)]));
   const document = {
     activeElement: null,
+    listeners: {},
+    visibilityState: 'visible',
+    addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
+    listeners: {},
+    addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); },
     created: [],
     body: new FakeElement('body'),
     documentElement: { dataset: {} },
@@ -92,6 +100,9 @@ function createApp(workspace = seededWorkspace(), confirm = () => true) {
     }
   };
   for (const element of elements.values()) element.ownerDocument = document;
+  elements.get('pomodoro').contains = target => target === elements.get('pomodoro') || target === elements.get('pomodoro-trigger') || target === elements.get('pomodoro-panel');
+  elements.get('pomodoro-panel').hidden = true;
+  elements.get('tab-manage').dataset.homeTab = 'manage';
   for (const id of ['direction', 'mode']) {
     const select = elements.get(id);
     const count = 3;
@@ -116,10 +127,12 @@ function createApp(workspace = seededWorkspace(), confirm = () => true) {
     return element;
   };
   const context = {
-    window, document, Blob: FakeBlob, URL, setTimeout() {},
+    window, document, Blob: FakeBlob, URL, setTimeout() {}, setInterval() { return 1; }, clearInterval() {}, addEventListener() {},
     CSS: { escape: value => value }, requestAnimationFrame(callback) { callback(); }
   };
   vm.runInNewContext(themeSource, context, { filename: 'themes.js' });
+  vm.runInNewContext(pomodoroSource, context, { filename: 'pomodoro.js' });
+  vm.runInNewContext(activitySource, context, { filename: 'activity-tracker.js' });
   vm.runInNewContext(appSource, context, { filename: 'app.js' });
   return { window, document, elements, storage, confirmations, anchors, URL };
 }
@@ -134,9 +147,29 @@ test('all JavaScript DOM selectors map to elements in the current HTML', () => {
 
 test('standalone HTML loads its local theme module before app initialization', () => {
   const themeScript = html.indexOf('src="themes.js');
+  const pomodoroScript = html.indexOf('src="pomodoro.js');
+  const activityScript = html.indexOf('src="activity-tracker.js');
   const appScript = html.indexOf('src="app.js');
-  assert.ok(themeScript >= 0 && appScript > themeScript);
+  assert.ok(themeScript >= 0 && pomodoroScript > themeScript && activityScript > pomodoroScript && appScript > activityScript);
+  assert.match(html, /A quiet place to practice/);
+  assert.match(html, /class="tomato-fruit"/);
+  assert.match(html, /id="pomodoro-duration"[\s\S]*?10 minutes[\s\S]*?20 minutes[\s\S]*?25 minutes[\s\S]*?30 minutes/);
   assert.doesNotMatch(html, /https?:\/\//);
+});
+
+test('Pomodoro controls remain independent of app navigation and saved learning data', async () => {
+  const app = createApp();
+  const before = app.storage.getItem(Lists.WORKSPACE_KEY);
+  await app.elements.get('pomodoro-trigger').click();
+  assert.equal(app.elements.get('pomodoro-panel').hidden, false);
+  await app.elements.get('pomodoro-duration').dispatch('change');
+  await app.elements.get('pomodoro-toggle').click();
+  assert.equal(app.elements.get('pomodoro-trigger-time').hidden, false);
+  await app.elements.get('home-tabs').dispatch('click', { target: app.elements.get('tab-manage') });
+  assert.equal(app.elements.get('home-view-manage').hidden, false);
+  assert.equal(JSON.stringify(app.window.KivoPomodoro.DURATIONS), JSON.stringify([10, 20, 25, 30]));
+  await app.elements.get('pomodoro-toggle').click();
+  assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY), before);
 });
 
 test('practice progress uses the compact completed and status summary in responsive styling', () => {
@@ -148,6 +181,44 @@ test('practice progress uses the compact completed and status summary in respons
   assert.match(html, /aria-label="Entries completed"/);
   assert.match(styleSource, /\.progress-meta-tail\s*\{[\s\S]*?white-space:\s*nowrap/);
   assert.match(styleSource, /@media\(max-width:560px\)\s*\{\s*\.progress-meta\s*\{/);
+});
+
+test('Progress has its own tab and a discreet homepage preview below the practice card', async () => {
+  const workspace = Lists.createWorkspace();
+  workspace.activity.days[Lists.localDateKey(new Date())] = { practiceMs: 90_000, cardsReviewed: 3, sessionsCompleted: 1 };
+  const app = createApp(workspace);
+  assert.match(app.elements.get('progress-preview-summary').textContent, /This week · 3 cards · 1 min/);
+  assert.equal(app.elements.get('progress-preview').hidden, false);
+  assert.equal(app.elements.get('tab-practice').attributes['aria-selected'], 'true');
+  await app.elements.get('progress-preview-link').click();
+  assert.equal(app.elements.get('home-view-progress').hidden, false);
+  assert.equal(app.elements.get('tab-progress').attributes['aria-selected'], 'true');
+  assert.equal(app.elements.get('setup').classList.values.has('progress-wide'), true);
+  assert.equal(app.elements.get('activity-practice-time').textContent, '1 min');
+  assert.equal(app.elements.get('activity-cards-reviewed').textContent, '3');
+  assert.equal(app.elements.get('activity-sessions').textContent, '1');
+  assert.equal(app.elements.get('activity-active-days').textContent, '1');
+  assert.equal(app.elements.get('activity-week-chart').children.length, 7);
+});
+
+test('written cards count once per card encounter, while an unfinished session stays incomplete', async () => {
+  const workspace = Lists.createWorkspace();
+  Lists.addList(workspace, 'French', [{ key: 'salut', value: 'bonjour' }]);
+  const app = createApp(workspace);
+  app.elements.get('direction').value = 'key-value';
+  await app.elements.get('start-button').click();
+  app.elements.get('answer').value = 'bonjoue';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  let summary = Lists.activitySummary(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).activity);
+  assert.equal(summary.cardsReviewed, 1, 'a near-match feedback and its extra try count as one card review');
+  app.elements.get('answer').value = 'bonjour';
+  await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
+  summary = Lists.activitySummary(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).activity);
+  assert.equal(summary.cardsReviewed, 1);
+  assert.equal(summary.sessionsCompleted, 0);
+  await app.elements.get('leave-button').click();
+  summary = Lists.activitySummary(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).activity);
+  assert.equal(summary.sessionsCompleted, 0);
 });
 
 test('celebration motion respects reduced-motion preferences', () => {
@@ -481,12 +552,19 @@ test('oral practice reveals and advances once per Enter in both directions and e
       assert.equal(app.elements.get('completion-eyebrow').textContent, 'ORAL PRACTICE COMPLETE');
       assert.equal(app.elements.get('completion-stats').hidden, true);
       assert.equal(app.elements.get('completion-mistakes-button').textContent, 'Practice again');
-      assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY), before);
+      const afterSession = JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY));
+      const beforeSession = JSON.parse(before);
+      assert.deepEqual(afterSession.progress, beforeSession.progress);
+      assert.deepEqual(afterSession.mistakes, beforeSession.mistakes);
+      assert.equal(Lists.activitySummary(afterSession.activity).cardsReviewed, 2);
+      assert.equal(Lists.activitySummary(afterSession.activity).sessionsCompleted, 1);
 
       await app.elements.get('completion-mistakes-button').click();
       assert.equal(app.elements.get('practice').hidden, false);
       assert.equal(app.elements.get('oral-reviewed-count').textContent, '0');
-      assert.equal(app.storage.getItem(Lists.WORKSPACE_KEY), before);
+      const afterRestart = JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY));
+      assert.deepEqual(afterRestart.progress, beforeSession.progress);
+      assert.deepEqual(afterRestart.mistakes, beforeSession.mistakes);
     }
   }
 });
@@ -561,8 +639,10 @@ test('a completed session celebrates once and makes the useful finish action pri
   assert.equal(app.elements.get('celebration').children.length, 18);
   assert.equal(app.elements.get('completion-mistakes-button').disabled, true);
   assert.equal(app.elements.get('completion-back-button').classList.values.has('primary'), true);
+  assert.equal(Lists.activitySummary(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).activity).sessionsCompleted, 1);
   await app.elements.get('answer-form').dispatch('submit', { preventDefault() {} });
   assert.equal(app.elements.get('celebration').children.length, 18);
+  assert.equal(Lists.activitySummary(JSON.parse(app.storage.getItem(Lists.WORKSPACE_KEY)).activity).sessionsCompleted, 1);
 });
 
 test('the finish message follows the selected Maze theme', async () => {

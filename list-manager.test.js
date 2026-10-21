@@ -149,6 +149,67 @@ test('workspace save and load preserve multiple lists, progress, and mistake col
   assert.equal(restored.mistakes[second.id].length, 1);
 });
 
+test('activity metrics are recorded by local day, aggregate to the four totals, and build a seven-day window', () => {
+  const workspace = Lists.createWorkspace();
+  const today = new Date(2026, 5, 18, 12);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const todayKey = Lists.localDateKey(today), yesterdayKey = Lists.localDateKey(yesterday);
+  Lists.recordPracticeTime(workspace, yesterdayKey, 65_000);
+  Lists.recordReviewedCard(workspace, yesterdayKey);
+  Lists.recordReviewedCard(workspace, todayKey);
+  Lists.recordCompletedSession(workspace, todayKey);
+  const summary = Lists.activitySummary(workspace.activity, today);
+  assert.equal(summary.practiceMs, 65_000);
+  assert.equal(summary.cardsReviewed, 2);
+  assert.equal(summary.sessionsCompleted, 1);
+  assert.equal(summary.activeDays, 2);
+  assert.equal(summary.recentDays.length, 7);
+  assert.deepEqual(summary.recentDays.slice(-2).map(day => day.date), [yesterdayKey, todayKey]);
+});
+
+test('older workspaces and backups start with empty activity without changing learning data', () => {
+  const makeId = idFactory(), storage = memoryStorage(), workspace = Lists.createWorkspace();
+  const list = Lists.addList(workspace, 'Old list', [{ key: 'one', value: 'un' }], makeId);
+  Lists.saveProgress(workspace, list.id, 'key-value', []);
+  Lists.addMistake(workspace, list.id, list.entries[0], makeId);
+  const oldWorkspace = { ...workspace };
+  delete oldWorkspace.activity;
+  storage.setItem('kivo.workspace.v1', JSON.stringify(oldWorkspace));
+  const loaded = Lists.loadWorkspace(storage, makeId);
+  assert.deepEqual(loaded.activity, { days: {} });
+  assert.deepEqual(loaded.progress, workspace.progress);
+  assert.deepEqual(loaded.mistakes, workspace.mistakes);
+
+  const oldBackup = Lists.restoreBackup({ format: 'kivo-workspace-v1', workspace: oldWorkspace }, makeId);
+  assert.deepEqual(oldBackup.activity, { days: {} });
+  assert.deepEqual(oldBackup.progress, workspace.progress);
+  assert.deepEqual(oldBackup.mistakes, workspace.mistakes);
+});
+
+test('workspace backups round-trip activity and repeated restores replace rather than add counts', () => {
+  const workspace = Lists.createWorkspace();
+  Lists.recordPracticeTime(workspace, '2026-06-18', 125_000);
+  Lists.recordReviewedCard(workspace, '2026-06-18');
+  Lists.recordCompletedSession(workspace, '2026-06-18');
+  const backup = { format: 'kivo-workspace-v1', workspace: JSON.parse(JSON.stringify(workspace)) };
+  const first = Lists.restoreBackup(backup);
+  const second = Lists.restoreBackup(backup);
+  assert.deepEqual(second.activity, first.activity);
+  assert.equal(Lists.activitySummary(second.activity, new Date(2026, 5, 18, 12)).practiceMs, 125_000);
+  assert.equal(Lists.activitySummary(second.activity, new Date(2026, 5, 18, 12)).cardsReviewed, 1);
+  assert.equal(Lists.activitySummary(second.activity, new Date(2026, 5, 18, 12)).sessionsCompleted, 1);
+});
+
+test('invalid activity records are discarded while valid daily values are normalized', () => {
+  const normalized = Lists.normalizeActivity({ days: {
+    bad: { practiceMs: 500, cardsReviewed: 2 },
+    '2026-02-31': { practiceMs: 500, cardsReviewed: 2 },
+    '2026-06-18': { practiceMs: '2500.8', cardsReviewed: -2, sessionsCompleted: 1.9 },
+    '2026-06-19': { practiceMs: 0, cardsReviewed: 0, sessionsCompleted: 0 }
+  } });
+  assert.deepEqual(normalized, { days: { '2026-06-18': { practiceMs: 2500, cardsReviewed: 0, sessionsCompleted: 1 } } });
+});
+
 test('restoring a workspace backup replaces all state and preserves IDs and saved progress', () => {
   const makeId = idFactory(), current = Lists.createWorkspace();
   const oldList = Lists.addList(current, 'Old list', [{ key: 'old', value: 'old value' }], makeId);
