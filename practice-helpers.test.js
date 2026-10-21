@@ -1,0 +1,132 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const {
+  createHintState,
+  nextHint,
+  applyHintCap,
+  feedbackLabel,
+  retainForRetry,
+  enterAction,
+  shouldRequestHint
+} = require('./practice-helpers.js');
+
+const visibleLetters = state => [...state.display].filter(character => /\p{L}/u.test(character)).length;
+
+test('short answers reveal the first letter and at least one more on the first hint', () => {
+  const oneLetter = createHintState('a');
+  nextHint(oneLetter);
+  assert.equal(oneLetter.display, 'a');
+  assert.equal(oneLetter.rating, 'near');
+
+  const twoLetters = createHintState('ab', () => 0);
+  nextHint(twoLetters);
+  assert.equal(twoLetters.display, 'ab');
+});
+
+test('long answers use rounded-up 35%, 65%, and 100% reveal counts', () => {
+  const state = createHintState('abcdefghijklmnopqrst', () => 0);
+  nextHint(state);
+  assert.equal(visibleLetters(state), 7);
+  assert.equal(state.display, 'a_cdefgh____________');
+  nextHint(state);
+  assert.equal(visibleLetters(state), 13);
+  nextHint(state);
+  assert.equal(visibleLetters(state), 20);
+  assert.equal(state.display, 'abcdefghijklmnopqrst');
+});
+
+test('the reveal order is randomized once and revealed letters remain visible', () => {
+  let randomCalls = 0;
+  const state = createHintState('abcdefghij', () => { randomCalls++; return 0; });
+  const callsAfterSetup = randomCalls;
+  nextHint(state);
+  const firstHint = state.display;
+  nextHint(state);
+  assert.equal(randomCalls, callsAfterSetup);
+  for (let index = 0; index < firstHint.length; index++) {
+    if (firstHint[index] !== '_') assert.equal(state.display[index], firstHint[index]);
+  }
+  assert.notEqual(firstHint, 'abc_______');
+});
+
+test('accented graphemes count as letters and retain their accent', () => {
+  const state = createHintState('e\u0301clair', () => 0);
+  nextHint(state);
+  assert.equal(state.characters[0], 'é');
+  assert.equal(visibleLetters(state), 3);
+  assert.equal(state.display[0], 'é');
+});
+
+test('multiword answers count letters across words while punctuation stays visible', () => {
+  const state = createHintState('ab, cd!', () => 0);
+  nextHint(state);
+  assert.equal(visibleLetters(state), 2);
+  assert.equal(state.display[2], ',');
+  assert.equal(state.display[3], ' ');
+  assert.equal(state.display[6], '!');
+  nextHint(state);
+  assert.equal(visibleLetters(state), 3);
+  assert.match(state.display, /,/);
+  assert.match(state.display, /!/);
+});
+
+test('repeated hints keep previous letters, then reveal everything and stop at level three', () => {
+  const state = createHintState('abcdefghij', () => 0.5);
+  nextHint(state);
+  const first = new Set([...state.revealed]);
+  nextHint(state);
+  for (const position of first) assert.ok(state.revealed.has(position));
+  nextHint(state);
+  assert.equal(state.level, 3);
+  assert.equal(state.rating, 'wrong');
+  assert.equal(visibleLetters(state), 10);
+  nextHint(state);
+  assert.equal(state.level, 3);
+});
+
+test('hint levels cap correct answers at near and force level three to wrong', () => {
+  assert.equal(applyHintCap('correct', 0), 'correct');
+  assert.equal(applyHintCap('correct', 1), 'near');
+  assert.equal(applyHintCap('correct', 2), 'near');
+  assert.equal(applyHintCap('correct', 3), 'wrong');
+  assert.equal(applyHintCap('wrong', 1), 'wrong');
+  assert.equal(applyHintCap('near', 2), 'near');
+});
+
+test('feedback labels describe the answer content separately from the hint penalty', () => {
+  assert.equal(feedbackLabel('correct', 0), 'Correct!');
+  assert.equal(feedbackLabel('correct', 1), 'Correct — hint used');
+  assert.equal(feedbackLabel('correct', 2), 'Correct — hint used');
+  assert.equal(feedbackLabel('near', 0), 'Almost — check the accents');
+  assert.equal(feedbackLabel('wrong', 0), 'Incorrect');
+  assert.equal(feedbackLabel('correct', 3), 'Answer revealed');
+
+  const comparison = 'correct';
+  assert.equal(applyHintCap(comparison, 1), 'near');
+});
+
+test('correct answers leave the queue and near or wrong answers return to its end', () => {
+  const first = { id: 1 }, second = { id: 2 }, third = { id: 3 };
+  const queue = [first, second, third];
+  retainForRetry(queue, 'near');
+  assert.deepEqual(queue, [second, third, first]);
+  retainForRetry(queue, 'wrong');
+  assert.deepEqual(queue, [third, first, second]);
+  retainForRetry(queue, 'correct');
+  assert.deepEqual(queue, [first, second]);
+  const only = [first];
+  retainForRetry(only, 'wrong');
+  assert.deepEqual(only, [first]);
+});
+
+test('Enter checks before evaluation and advances after evaluation', () => {
+  assert.equal(enterAction(false), 'check');
+  assert.equal(enterAction(true), 'advance');
+});
+
+test('Space requests a hint only when the answer is empty and not evaluated', () => {
+  assert.equal(shouldRequestHint(' ', '', false), true);
+  assert.equal(shouldRequestHint(' ', 'bonjour', false), false);
+  assert.equal(shouldRequestHint(' ', '', true), false);
+  assert.equal(shouldRequestHint('a', '', false), false);
+});
