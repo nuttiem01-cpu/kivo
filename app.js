@@ -5,7 +5,7 @@
   const Lists = window.KivoLists;
   const Practice = window.KivoPractice;
   const ids = [
-    'setup','editor','practice','completion','migration-note','storage-note','list-select','list-status','new-list-button','import-list-button','csv-file',
+    'setup','editor','practice','completion','migration-note','storage-note','home-tabs','tab-practice','tab-manage','tab-review','tab-about','home-view-practice','home-view-manage','home-view-review','home-view-about','list-select','manage-list-select','list-status','new-list-button','import-list-button','csv-file',
     'selected-list','selected-name','entry-count','edit-list-button','duplicate-list-button','export-list-button','delete-list-button',
     'mistakes-review','mistake-total','mistake-empty','mistake-key-heading','mistake-value-heading','mistake-rows','practice-mistakes-button','export-mistakes','clear-mistakes',
     'practice-options','direction','mode','collect-mistakes','start-button','progress-hint','export-progress','progress-file','reset-progress',
@@ -19,10 +19,12 @@
   let storage = null;
   try { storage = window.localStorage; storage.getItem(Lists.WORKSPACE_KEY); } catch { storage = null; }
   let workspace = Lists.loadWorkspace(storage);
+  let manageListId = workspace.activeListId || workspace.lists[0]?.id || null;
   let storageWorks = Boolean(storage);
   let queue = [], current = null, hintState = null, evaluated = false, correct = 0, sessionMistakes = 0, sessionTotal = 0;
   let currentListId = null, practiceDirection = 'key-value', mistakePractice = false;
   let draft = null, editorDirty = false;
+  let homeView = 'practice';
 
   function shuffled(items) {
     const result = items.slice();
@@ -33,14 +35,32 @@
     return result;
   }
   function selectedList() { return workspace.lists.find(list => list.id === workspace.activeListId) || null; }
+  function managedList() { return workspace.lists.find(list => list.id === manageListId) || null; }
   function show(section) {
     els.setup.hidden = section !== 'setup';
     els.editor.hidden = section !== 'editor';
     els.practice.hidden = section !== 'practice';
     els.completion.hidden = section !== 'completion';
   }
+  function setHomeView(view) {
+    const views = {
+      practice: [els.homeViewPractice, els.tabPractice],
+      manage: [els.homeViewManage, els.tabManage],
+      review: [els.homeViewReview, els.tabReview],
+      about: [els.homeViewAbout, els.tabAbout]
+    };
+    if (!views[view]) return;
+    homeView = view;
+    for (const [name, [panel, tab]] of Object.entries(views)) {
+      panel.hidden = name !== view;
+      tab.setAttribute('aria-selected', String(name === view));
+      tab.tabIndex = name === view ? 0 : -1;
+      tab.classList.toggle('active', name === view);
+    }
+  }
   function setListStatus(message, error = false) {
     els.listStatus.textContent = message;
+    els.listStatus.hidden = false;
     els.listStatus.classList.toggle('error', error);
   }
   function persist() {
@@ -71,14 +91,15 @@
     els.resetProgress.disabled = !saved;
   }
   function renderMistakes(list) {
-    const mistakes = workspace.mistakes[list.id] || [];
+    const mistakes = list ? workspace.mistakes[list.id] || [] : [];
     els.mistakeTotal.textContent = String(mistakes.length);
     els.mistakeEmpty.hidden = mistakes.length > 0;
+    els.mistakeEmpty.textContent = list ? 'No collected mistakes for this list.' : 'Choose a list to review its mistakes.';
     els.practiceMistakesButton.disabled = mistakes.length === 0;
     els.exportMistakes.disabled = mistakes.length === 0;
     els.clearMistakes.disabled = mistakes.length === 0;
-    els.mistakeKeyHeading.textContent = list.keyLabel;
-    els.mistakeValueHeading.textContent = list.valueLabel;
+    els.mistakeKeyHeading.textContent = list?.keyLabel || 'Key';
+    els.mistakeValueHeading.textContent = list?.valueLabel || 'Value';
     els.mistakeRows.replaceChildren();
     for (const entry of mistakes) {
       const row = document.createElement('tr');
@@ -88,16 +109,20 @@
     }
   }
   function renderSetup() {
-    els.listSelect.replaceChildren();
-    const placeholder = document.createElement('option');
-    placeholder.value = ''; placeholder.textContent = workspace.lists.length ? 'Choose a list' : 'No lists yet';
-    els.listSelect.append(placeholder);
-    for (const list of workspace.lists) {
-      const option = document.createElement('option');
-      option.value = list.id; option.textContent = `${list.name} · ${list.entries.length}`; els.listSelect.append(option);
+    if (!workspace.lists.some(list => list.id === manageListId)) manageListId = workspace.lists[0]?.id || null;
+    for (const select of [els.listSelect, els.manageListSelect]) {
+      select.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = ''; placeholder.textContent = workspace.lists.length ? 'Choose a list' : 'No lists yet';
+      select.append(placeholder);
+      for (const list of workspace.lists) {
+        const option = document.createElement('option');
+        option.value = list.id; option.textContent = `${list.name} · ${list.entries.length}`; select.append(option);
+      }
     }
     els.listSelect.value = workspace.activeListId || '';
-    const list = selectedList();
+    els.manageListSelect.value = manageListId || '';
+    const list = managedList();
     els.selectedList.hidden = !list;
     els.practiceOptions.hidden = !list;
     els.startButton.disabled = !list || !list.entries.length;
@@ -109,14 +134,18 @@
       els.direction.options[2].textContent = 'Mixed';
       els.editorKeyHeading.textContent = list.keyLabel;
       els.editorValueHeading.textContent = list.valueLabel;
-      renderMistakes(list);
     }
+    renderMistakes(list);
     els.migrationNote.textContent = workspace.migrationNotice;
     els.migrationNote.hidden = !workspace.migrationNotice;
+    setHomeView(homeView);
     renderProgressHint();
   }
   function newList() {
+    const practiceListId = workspace.activeListId;
     const list = Lists.addList(workspace, 'Untitled list');
+    workspace.activeListId = practiceListId;
+    manageListId = list.id;
     persist(); renderSetup(); openEditor(list.id);
   }
   async function importCSV(event) {
@@ -125,7 +154,10 @@
     try {
       const parsed = Lists.parseCSV(await file.text());
       if (!parsed.entries.length) throw new Error('This CSV has no entries.');
+      const practiceListId = workspace.activeListId;
       const list = Lists.addList(workspace, fileBaseName(file.name), parsed.entries);
+      workspace.activeListId = practiceListId;
+      manageListId = list.id;
       const migrated = Lists.migrateProgressForList(workspace, list);
       persist(); renderSetup();
       const duplicateNote = parsed.duplicateCount ? ` Skipped ${parsed.duplicateCount} duplicate pair${parsed.duplicateCount === 1 ? '' : 's'}.` : '';
@@ -142,7 +174,7 @@
   function openEditor(listId) {
     const list = workspace.lists.find(item => item.id === listId);
     if (!list) return;
-    workspace.activeListId = list.id;
+    manageListId = list.id;
     draft = editorSnapshot(list); editorDirty = false;
     els.editorName.value = draft.name;
     els.editorKeyLabel.value = draft.keyLabel;
@@ -179,6 +211,21 @@
           const target = draft.entries.find(item => item.id === input.dataset.entryId);
           if (target) target[input.dataset.field] = input.value;
           markEditorDirty();
+        });
+        if (field === 'value') input.addEventListener('keydown', event => {
+          const isNextEntryKey = event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey);
+          if (!isNextEntryKey) return;
+          const target = draft.entries.find(item => item.id === input.dataset.entryId);
+          if (!target) return;
+          if (!String(target.key).trim() || !String(target.value).trim()) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              els.editorStatus.textContent = 'Fill in both fields before starting the next entry.';
+            }
+            return;
+          }
+          event.preventDefault();
+          addEditorEntry();
         });
         cell.append(input); row.append(cell);
       }
@@ -332,23 +379,45 @@
     show('completion');
   }
 
+  els.homeTabs.addEventListener('click', event => {
+    const tab = event.target.closest('[data-home-tab]');
+    if (tab) setHomeView(tab.dataset.homeTab);
+  });
+  els.homeTabs.addEventListener('keydown', event => {
+    const tabs = [...els.homeTabs.querySelectorAll('[role="tab"]')];
+    const selected = tabs.indexOf(document.activeElement);
+    if (selected < 0) return;
+    let next = selected;
+    if (event.key === 'ArrowRight') next = (selected + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (selected - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    tabs[next].focus();
+    setHomeView(tabs[next].dataset.homeTab);
+  });
   els.listSelect.addEventListener('change', () => {
     workspace.activeListId = els.listSelect.value || null; persist(); renderSetup();
+  });
+  els.manageListSelect.addEventListener('change', () => {
+    manageListId = els.manageListSelect.value || null; renderSetup();
   });
   els.newListButton.addEventListener('click', newList);
   els.importListButton.addEventListener('click', () => els.csvFile.click());
   els.csvFile.addEventListener('change', importCSV);
-  els.editListButton.addEventListener('click', () => { const list = selectedList(); if (list) openEditor(list.id); });
+  els.editListButton.addEventListener('click', () => { const list = managedList(); if (list) openEditor(list.id); });
   els.duplicateListButton.addEventListener('click', () => {
-    const copy = Lists.duplicateList(workspace, workspace.activeListId);
-    if (copy) { persist(); renderSetup(); setListStatus(`Created “${copy.name}” as a separate list.`); }
+    const practiceListId = workspace.activeListId;
+    const copy = Lists.duplicateList(workspace, manageListId);
+    if (copy) { workspace.activeListId = practiceListId; manageListId = copy.id; persist(); renderSetup(); setListStatus(`Created “${copy.name}” as a separate list.`); }
   });
   els.deleteListButton.addEventListener('click', () => {
-    const list = selectedList();
+    const list = managedList();
     if (!list || !window.confirm(`Delete “${list.name}”, its progress and its collected mistakes from this browser?`)) return;
-    Lists.deleteList(workspace, list.id); persist(); renderSetup(); setListStatus(`Deleted “${list.name}”.`);
+    Lists.deleteList(workspace, list.id); manageListId = workspace.activeListId || workspace.lists[0]?.id || null; persist(); renderSetup(); setListStatus(`Deleted “${list.name}”.`);
   });
-  els.exportListButton.addEventListener('click', () => { const list = selectedList(); if (list) exportList(list); });
+  els.exportListButton.addEventListener('click', () => { const list = managedList(); if (list) exportList(list); });
   els.practiceMistakesButton.addEventListener('click', () => start(true, true));
   els.exportMistakes.addEventListener('click', () => {
     const list = selectedList(); if (list) download(`${safeFilename(list.name)}-mistakes.csv`, Lists.encodeCSV(workspace.mistakes[list.id] || []), 'text/csv;charset=utf-8');
@@ -385,7 +454,7 @@
   });
   els.completionBackButton.addEventListener('click', () => { renderSetup(); show('setup'); });
   els.completionMistakesButton.addEventListener('click', () => {
-    renderSetup(); show('setup'); els.mistakesReview.open = true; els.mistakesReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    renderSetup(); setHomeView('review'); show('setup'); els.mistakesReview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   });
   els.exportProgress.addEventListener('click', () => download('kivo-workspace-backup.json', JSON.stringify({ format: 'kivo-workspace-v1', workspace }, null, 2), 'application/json'));
   els.progressFile.addEventListener('change', async event => {

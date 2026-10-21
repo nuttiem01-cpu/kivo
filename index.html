@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f6f2">
   <title>Kivo — practice with your lists</title>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <main class="shell">
@@ -14,74 +14,114 @@
       <span class="tagline">A quiet place to practice</span>
     </header>
 
-    <section id="setup" class="panel setup" aria-labelledby="setup-title">
-      <p class="eyebrow">PRACTICE</p>
-      <h1 id="setup-title">Your lists.</h1>
-      <p class="intro">Choose a list or make one of your own.</p>
-      <p id="migration-note" class="notice" hidden></p>
-      <p id="storage-note" class="storage-note" hidden>Browser storage is unavailable. Changes will last only for this session; export your lists to keep a copy.</p>
+    <section id="setup" class="panel setup" aria-label="Kivo home">
+      <nav id="home-tabs" class="home-tabs" role="tablist" aria-label="Home sections">
+        <button id="tab-practice" class="home-tab active" type="button" role="tab" aria-selected="true" aria-controls="home-view-practice" tabindex="0" data-home-tab="practice">Practice</button>
+        <button id="tab-manage" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-manage" tabindex="-1" data-home-tab="manage">Manage lists</button>
+        <button id="tab-review" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-review" tabindex="-1" data-home-tab="review">Review &amp; backup</button>
+        <button id="tab-about" class="home-tab" type="button" role="tab" aria-selected="false" aria-controls="home-view-about" tabindex="-1" data-home-tab="about">About</button>
+      </nav>
+      <p id="list-status" class="home-status hint" aria-live="polite" hidden></p>
 
-      <div class="list-picker field-group">
-        <label for="list-select">Vocabulary list</label>
-        <select id="list-select" aria-describedby="list-status"><option value="">No lists yet</option></select>
-        <p id="list-status" class="hint" aria-live="polite">Create a list or import a CSV to get started.</p>
-      </div>
-      <div class="button-row list-create-actions">
-        <button id="new-list-button" class="button primary" type="button">New list <span aria-hidden="true">＋</span></button>
-        <button id="import-list-button" class="button secondary" type="button">Import CSV</button>
-        <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
-      </div>
-
-      <div id="selected-list" class="selected-list" hidden>
-        <div class="selected-list-heading">
-          <div><h2 id="selected-name"></h2><p id="entry-count" class="hint"></p></div>
-          <button id="edit-list-button" class="text-button" type="button">Edit list</button>
+      <section id="home-view-practice" class="home-view" role="tabpanel" aria-labelledby="tab-practice" tabindex="0">
+        <p class="eyebrow">PRACTICE</p>
+        <h1 id="setup-title">Let's practice.</h1>
+        <div class="practice-card">
+          <div class="list-picker field-group">
+            <label for="list-select">Choose a list</label>
+            <select id="list-select" aria-describedby="list-helper list-status"><option value="">No lists yet</option></select>
+            <p id="list-helper" class="hint">Choose a list for this session.</p>
+          </div>
+          <div id="practice-options" class="practice-options" hidden>
+            <div class="form-grid">
+              <div class="field-group">
+                <label for="direction">Direction</label>
+                <select id="direction"><option value="key-value">Key → Value</option><option value="value-key">Value → Key</option><option value="mixed">Mixed</option></select>
+              </div>
+              <div class="field-group">
+                <label for="mode">Practice mode</label>
+                <select id="mode"><option value="full">Full — start fresh</option><option value="progressive">Progressive — continue</option></select>
+              </div>
+            </div>
+            <label class="check-row"><input id="collect-mistakes" type="checkbox" checked><span>Collect mistakes for review</span></label>
+            <div class="button-row start-row"><button id="start-button" class="button primary" type="button">Start practice <span aria-hidden="true">↗</span></button></div>
+            <p id="progress-hint" class="hint"></p>
+          </div>
         </div>
-        <div class="transfer-row list-actions">
-          <button id="duplicate-list-button" class="text-button" type="button">Duplicate</button>
-          <button id="export-list-button" class="text-button" type="button">Export CSV</button>
-          <button id="delete-list-button" class="text-button danger-text" type="button">Delete</button>
-        </div>
+      </section>
 
-        <details id="mistakes-review" class="mistakes-review">
-          <summary>Review mistakes <span id="mistake-total" class="count-pill">0</span></summary>
+      <section id="home-view-manage" class="home-view" role="tabpanel" aria-labelledby="tab-manage" tabindex="0" hidden>
+        <p class="eyebrow">LISTS</p>
+        <h1>Manage lists.</h1>
+        <div class="list-picker field-group manage-list-picker">
+          <label for="manage-list-select">Choose a list to manage</label>
+          <select id="manage-list-select" aria-describedby="manage-list-helper"><option value="">No lists yet</option></select>
+          <p id="manage-list-helper" class="hint">This selection is separate from the list chosen for practice.</p>
+        </div>
+        <div class="manage-actions button-row">
+          <button id="new-list-button" class="button primary" type="button">New list <span aria-hidden="true">＋</span></button>
+          <button id="import-list-button" class="button secondary" type="button">Import CSV</button>
+          <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+        </div>
+        <p class="hint manage-hint">Lists and edits stay in this browser. Export a CSV to save a copy to your project folder.</p>
+        <div id="selected-list" class="selected-list" hidden>
+          <div class="selected-list-heading">
+            <div><h2 id="selected-name"></h2><p id="entry-count" class="hint"></p></div>
+            <button id="edit-list-button" class="text-button" type="button">Edit list</button>
+          </div>
+          <div class="transfer-row list-actions">
+            <button id="duplicate-list-button" class="text-button" type="button">Duplicate</button>
+            <button id="export-list-button" class="text-button" type="button">Export CSV</button>
+            <button id="delete-list-button" class="text-button danger-text" type="button">Delete</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="home-view-review" class="home-view" role="tabpanel" aria-labelledby="tab-review" tabindex="0" hidden>
+        <p class="eyebrow">REVIEW</p>
+        <h1>Review &amp; backup.</h1>
+        <div class="review-quick-row">
+          <p><strong id="mistake-total" class="review-count">0</strong><span> collected mistakes</span></p>
+          <button id="practice-mistakes-button" class="button secondary" type="button" disabled>Practice mistakes</button>
+        </div>
+        <div id="mistakes-review" class="review-content">
           <p id="mistake-empty" class="hint">No collected mistakes for this list.</p>
           <div class="table-scroll"><table class="review-table"><thead><tr><th id="mistake-key-heading">Key</th><th id="mistake-value-heading">Value</th></tr></thead><tbody id="mistake-rows"></tbody></table></div>
-          <div class="transfer-row">
-            <button id="practice-mistakes-button" class="text-button" type="button" disabled>Practice mistakes</button>
+          <div class="transfer-row review-actions">
             <button id="export-mistakes" class="text-button" type="button" disabled>Export mistakes CSV</button>
-            <button id="clear-mistakes" class="text-button danger-text" type="button" disabled>Clear</button>
+            <button id="clear-mistakes" class="text-button danger-text" type="button" disabled>Clear mistakes</button>
           </div>
-        </details>
-      </div>
-
-      <div id="practice-options" class="practice-options" hidden>
-        <div class="form-grid">
-          <div class="field-group">
-            <label for="direction">Direction</label>
-            <select id="direction"><option value="key-value">Key → Value</option><option value="value-key">Value → Key</option><option value="mixed">Mixed</option></select>
-          </div>
-          <div class="field-group">
-            <label for="mode">Practice mode</label>
-            <select id="mode"><option value="full">Full — start fresh</option><option value="progressive">Progressive — continue</option></select>
+          <div class="backup-content">
+            <h2>Workspace backup</h2>
+            <p class="hint">Keep a portable copy of your lists, progress and collected mistakes.</p>
+            <div class="transfer-row backup-actions">
+              <button id="export-progress" class="text-button" type="button">Export backup</button>
+              <label class="text-button import-label" for="progress-file">Import backup</label>
+              <input id="progress-file" type="file" accept="application/json,.json" hidden>
+              <button id="reset-progress" class="text-button" type="button" disabled>Reset this direction's progress</button>
+            </div>
+            <p class="hint data-note">Edits stay in this browser. CSV files are not changed automatically.</p>
           </div>
         </div>
-        <label class="check-row"><input id="collect-mistakes" type="checkbox" checked><span>Collect mistakes for review</span></label>
-        <div class="button-row"><button id="start-button" class="button primary" type="button">Start practice <span aria-hidden="true">↗</span></button></div>
-        <p id="progress-hint" class="hint"></p>
-      </div>
+      </section>
 
-      <details class="backup-tools">
-        <summary>Backup and restore</summary>
-        <p class="hint">Workspace backups include your local lists, progress and collected mistakes.</p>
-        <div class="transfer-row">
-          <button id="export-progress" class="text-button" type="button">Export workspace backup</button>
-          <label class="text-button import-label" for="progress-file">Import workspace backup</label>
-          <input id="progress-file" type="file" accept="application/json,.json" hidden>
-          <button id="reset-progress" class="text-button" type="button" disabled>Reset this direction's progress</button>
-        </div>
-      </details>
-      <p class="hint data-note">Edits stay in this browser. Export a CSV to save changes back into your project folder.</p>
+      <section id="home-view-about" class="home-view about-view" role="tabpanel" aria-labelledby="tab-about" tabindex="0" hidden>
+        <p class="eyebrow">ABOUT</p>
+        <h1>About Kivo.</h1>
+        <p>Kivo is a small, standalone study tool for vocabulary, concepts and other paired learning material. Choose or create a list, recall each answer, and repeat the entries that need more practice.</p>
+        <ul>
+          <li>Import and export portable CSV lists.</li>
+          <li>Practice either direction, in full or progressive mode, with optional hints.</li>
+          <li>Review mistakes and keep per-list progress in this browser.</li>
+        </ul>
+        <p>Open <code>index.html</code> directly to use Kivo offline. Lists and progress stay in this browser; use CSV or a workspace backup to move a copy. There is no account or cloud sync.</p>
+        <p class="hint">The optional book link opens Google Translate and sends the answer when clicked.</p>
+      </section>
+
+      <div class="home-disclaimers">
+        <p id="migration-note" class="home-disclaimer" hidden></p>
+        <p id="storage-note" class="home-disclaimer" hidden>Browser storage is unavailable. Changes will last only for this session; export your lists to keep a copy.</p>
+      </div>
     </section>
 
     <section id="editor" class="panel editor" hidden aria-labelledby="editor-title">
@@ -98,6 +138,7 @@
         <label class="search-field" for="entry-search"><span class="sr-only">Search entries</span><input id="entry-search" type="search" placeholder="Search entries…"></label>
         <button id="add-entry-button" class="button secondary" type="button">Add entry <span aria-hidden="true">＋</span></button>
       </div>
+      <p class="hint entry-shortcut-hint">In a Value field, press Tab or Enter to start the next entry.</p>
       <p id="editor-count" class="hint"></p>
       <p id="editor-status" class="editor-status" aria-live="polite"></p>
       <div class="table-scroll editor-table-scroll">
@@ -140,6 +181,6 @@
   </main>
   <script src="list-manager.js?v=2"></script>
   <script src="practice-helpers.js?v=3"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
